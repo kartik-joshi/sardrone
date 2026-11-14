@@ -50,18 +50,33 @@ def flight(tmp_path_factory):
 
 def test_commands_are_sent_in_mission_order(flight):
     drone, _, _ = flight
-    assert drone.commands == [
-        "connect",
-        "wait_until_ready",
-        "arm",
-        "takeoff 10",
+    commands = drone.commands
+    assert commands[:4] == ["connect", "wait_until_ready", "arm", "takeoff 10"]
+    assert commands[-2:] == ["land", "close"]
+    gotos = commands[4:-2]
+    assert all(command.startswith("goto ") for command in gotos)
+
+    # Each leg is many small setpoint moves; the last one of each leg is the corner.
+    last_of_each_leg = [
+        a for a, b in zip(gotos, gotos[1:] + ["end"]) if a.split(" yaw ")[1] != b.split(" yaw ")[-1]
+    ]
+    assert last_of_each_leg == [
         "goto 20 0 -10 yaw 0",
         "goto 20 20 -10 yaw 90",
         "goto 0 20 -10 yaw 180",
         "goto 0 0 -10 yaw 270",
-        "land",
-        "close",
     ]
+
+
+def test_setpoint_moves_at_cruise_speed_not_in_one_jump(flight):
+    drone, _, _ = flight
+    first_leg = [c for c in drone.commands if c.endswith(" yaw 0")]
+    norths = [float(c.split()[1]) for c in first_leg]
+    steps = [b - a for a, b in zip(norths, norths[1:])]
+    # 3 m/s at 10 Hz = 0.3 m per tick.
+    assert norths[0] == pytest.approx(0.3)
+    assert max(steps) == pytest.approx(0.3, abs=1e-9)
+    assert norths[-1] == 20.0
 
 
 def test_event_story(flight):
@@ -147,7 +162,9 @@ def test_telemetry_tracks_modes_and_battery(flight):
     assert telemetry[0]["battery_percent"] == 100.0
     assert telemetry[-1]["battery_percent"] < 100.0
     cruise = [m for m in telemetry if m["flight_mode"] == "OFFBOARD"]
-    assert max(m["ground_speed_m_s"] for m in cruise) == pytest.approx(4.0, abs=1e-6)
+    speeds = sorted(m["ground_speed_m_s"] for m in cruise)
+    assert speeds[len(speeds) // 2] == pytest.approx(3.0, abs=1e-6)  # median = cruise speed
+    assert speeds[-1] < 4.0
     climb = [m for m in telemetry if m["flight_mode"] == "TAKEOFF"]
     assert all(m["velocity_enu_m_s"]["z"] > 0 for m in climb[1:]), "climbing = +z velocity"
 

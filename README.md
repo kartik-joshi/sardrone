@@ -17,15 +17,18 @@ make view          # load every episode into FiftyOne and open http://localhost:
 ```
 
 `make view` installs FiftyOne on first use (about 900 MB). To record from
-PX4, start the simulator in another terminal first:
+PX4, start the simulator in one terminal and record from another:
 
 ```bash
-cd /path/to/PX4-Autopilot && make px4_sitl gz_x500
+make sim           # PX4 SITL + Gazebo, headless; leave it running
 ```
 
 ```bash
 make record        # arm, take off to 10 m, fly a 20 m square, land -> flight-0001.mcap
 ```
+
+`make sim` expects PX4 in `../PX4-Autopilot`; override with
+`make sim PX4_DIR=/path/to/PX4-Autopilot`. See [PX4 setup](#px4-setup).
 
 ## What is verified, and what is not
 
@@ -34,10 +37,14 @@ make record        # arm, take off to 10 m, fly a 20 m square, land -> flight-00
 | Time and frame conversions, `EpisodeWriter`, synthetic episode | Tested (`make test`), files read back with an independent MCAP reader |
 | Mission logic in `record_flight.py` | Tested end to end with `FakeDrone` on simulated time |
 | FiftyOne dataset + App | Tested; viewer checked by hand: 3D, camera, map and log tiles replay with no warnings |
-| `MavsdkDrone` against a **running PX4** | **Not verified.** PX4 was not installed on the machine this was built on. The API calls were checked against the installed `mavsdk` 4.2.0 source, and the "no autopilot" error path was run, but no real flight has been recorded yet |
+| `MavsdkDrone` against a running PX4 | Flown on PX4 SITL v1.18 + Gazebo Harmonic (`gz_x500`, headless), from a cold start. Not part of `make test`, which must run without a simulator |
 | Gazebo camera | Not implemented (`GazeboCamera` is a documented TODO); frames are synthetic |
+| Gazebo window (GUI) | Not tried: it needs XQuartz, which needs an admin password to install |
 
-First real flight checklist: see [Verifying against PX4](#verifying-against-px4).
+Numbers from the recorded real flight (`flight-0001`, 61.6 s): cruise height
+9.6 to 10.1 m, top ground speed 3.1 m/s, square corners within the 1 m
+tolerance, touchdown 0.5 m from the takeoff point, samples every 0.10 s on
+PX4's own clock, battery reported on a 0 to 100 scale.
 
 ## Layout
 
@@ -106,38 +113,59 @@ the conversion happens in exactly one place.
 | `base_link` | drone body, x forward, y left, z up |
 | `camera_front` | optical frame: x right, y down, z into the image |
 
-## Verifying against PX4
+## PX4 setup
 
-Nothing below has been run yet. On the first real flight, check:
+What was done on this Mac (Apple Silicon, macOS 26), following the PX4 macOS
+guide:
 
-1. `make record` connects. The default URL is `udpin://0.0.0.0:14540`; MAVSDK
-   4.x prints a deprecation warning for the older `udp://:14540` spelling,
-   which means the same thing. Override with
-   `.venv/bin/python -m sardrone.sim.record_flight --url ...`.
-2. The console prints `takeoff`, four `waypoint_reached`, and two `land` lines.
-3. In `flight-0001.json`, `duration_s` is plausible (roughly 60 to 90 s) and
-   the topic counts are about 10 per second.
-4. In the viewer, `/telemetry` shows `battery_percent` near 100 at the start.
-   If it reads near 1.0, MAVSDK is reporting a 0..1 fraction and
-   `mavsdk_drone.py` needs a `* 100`.
-5. In the 3D tile the drone climbs **up**, and the first leg goes **north**
-   (toward +Y).
+```bash
+git clone https://github.com/PX4/PX4-Autopilot.git ../PX4-Autopilot
+```
 
-Known limits of the real path: if PX4 does not supply attitude timestamps the
-recorder falls back to this computer's monotonic clock for the whole episode
-(still one clock); and the mission stops with a timeout error, commands a
-landing and saves the partial episode if a waypoint is not reached in 90 s.
+```bash
+cd ../PX4-Autopilot && git submodule update --init --recursive --force
+```
+
+```bash
+./Tools/setup/macos.sh --sim-tools
+```
+
+```bash
+brew install pkgconf
+```
+
+- The setup script installs build tools with Homebrew, a Python venv in
+  `PX4-Autopilot/.venv`, and Gazebo Harmonic in
+  `PX4-Autopilot/Tools/setup/macos/.pixi`.
+- `pkgconf` is not installed by the script, but the build fails without it
+  ("Could NOT find PkgConfig").
+- The script's last step installs XQuartz and asks for your password. It is
+  only needed for the Gazebo window; `make sim` runs headless without it.
+  For the window: `brew install --cask xquartz`, log out and in, then
+  `make sim HEADLESS=0`.
+
+## What the first real flight taught
+
+The first recording against PX4 completed, but the data showed three
+problems that the fake drone could not reveal. Each is now handled in code:
+
+| Seen in the data | Cause | Fix |
+| --- | --- | --- |
+| Cruise at 12 m, not 10 m | PX4's height estimate was still converging after boot (1.9 m on the ground) | `wait_until_ready()` also waits for the height to hold within 10 cm for 5 s |
+| 10 m/s legs, 1 m overshoot | One far setpoint makes PX4 fly at its maximum speed | The setpoint is moved along each leg at 3 m/s (`_fly_leg`) |
+| Landed 6 m from takeoff | Landing started while still moving | A corner counts as reached only below 0.5 m/s |
+
+Known limits: if PX4 does not supply attitude timestamps the recorder falls
+back to this computer's monotonic clock for the whole episode (still one
+clock); and if a waypoint is not reached in 90 s the mission stops with a
+timeout, commands a landing and saves the partial episode.
 
 ## The camera TODO
 
-`make px4_sitl gz_x500` has no camera. Per the PX4 Gazebo vehicle docs, the
-x500 variants with one are `gz_x500_mono_cam` (forward), `gz_x500_mono_cam_down`
-(downward), `gz_x500_depth` (forward depth) and `gz_x500_gimbal`. Confirm in
-your checkout with:
-
-```bash
-ls PX4-Autopilot/Tools/simulation/gz/models | grep -i -E "cam|depth|gimbal"
-```
+`make px4_sitl gz_x500` has no camera. The x500 variants with one, confirmed
+in the local checkout (`Tools/simulation/gz/models`), are `x500_mono_cam`
+(forward), `x500_mono_cam_down` (downward), `x500_depth` (forward depth) and
+`x500_gimbal`.
 
 `GazeboCamera` in `sardrone/sim/camera.py` lists the steps to implement it.
 Until then, `SyntheticCamera` draws a scrolling ground grid and an orange
@@ -175,6 +203,10 @@ placeholders for a real detector.
   Foxglove-compatible viewer can decode the file with no custom code, and my
   tests read the files back with a different MCAP library than the one that
   wrote them."
+- **Sim-to-real gap:** "My fake drone passed every test, and the first real
+  flight still cruised 2 m too high and overshot corners at 10 m/s. I found
+  that by reading the recorded episode, which is the point of recording
+  everything on one timeline."
 - **Testability:** "The mission is written against a five-method `Drone`
   interface. A fake drone with its own simulated clock lets the whole
   arm-takeoff-square-land sequence, including the timeout-and-land failure

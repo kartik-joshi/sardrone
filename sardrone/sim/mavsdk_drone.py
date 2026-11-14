@@ -12,8 +12,8 @@ tutorials show (`from mavsdk import System; drone.telemetry.position()`):
             (`await telemetry.position()`), which is what we use: the recorder
             samples everything together at a fixed rate
 
-NOT yet exercised against a running PX4 from this repo's test suite (the
-tests use FakeDrone). See README "Verifying against PX4".
+Flown against PX4 SITL v1.18 + Gazebo Harmonic (gz_x500). The automated
+tests use FakeDrone instead, because they must run without a simulator.
 """
 
 import asyncio
@@ -70,16 +70,31 @@ class MavsdkDrone:
             except Exception as error:  # noqa: BLE001 - report and carry on
                 print(f"warning: {set_rate.__name__} failed: {error}")
 
-    async def wait_until_ready(self, timeout_s: float = 60.0) -> None:
-        """Wait for a GPS/position estimate and for PX4 to allow arming."""
+    async def wait_until_ready(self, timeout_s: float = 90.0, settle_s: float = 5.0) -> None:
+        """Wait until PX4 allows arming AND its height estimate has settled.
+
+        Right after boot PX4's estimator is still converging: in the first
+        real flight it reported 1.9 m of height while sitting on the ground,
+        which put the whole flight 2 m too high. So we also require the
+        local height to stay within 10 cm for `settle_s` seconds.
+        """
+        poll_s = 0.5
         waited = 0.0
+        stable_since = 0.0
+        reference_down = None
         while waited < timeout_s:
             health = await self._telemetry.health()
-            if health.is_global_position_ok and health.is_home_position_ok and health.is_armable:
+            healthy = (
+                health.is_global_position_ok and health.is_home_position_ok and health.is_armable
+            )
+            down = (await self._telemetry.position_velocity_ned()).position.down_m
+            if not healthy or reference_down is None or abs(down - reference_down) > 0.10:
+                reference_down, stable_since = down, waited  # restart the settle timer
+            elif waited - stable_since >= settle_s:
                 return
-            await asyncio.sleep(0.5)
-            waited += 0.5
-        raise DroneConnectionError(f"vehicle not ready to arm after {timeout_s:g} s")
+            await asyncio.sleep(poll_s)
+            waited += poll_s
+        raise DroneConnectionError(f"vehicle not ready and settled after {timeout_s:g} s")
 
     async def read_state(self) -> DroneState:
         position_velocity = await self._telemetry.position_velocity_ned()
@@ -91,9 +106,7 @@ class MavsdkDrone:
 
         ned = position_velocity.position
         velocity = position_velocity.velocity
-        # remaining_percent: 0..100 according to MAVSDK's telemetry.proto. The
-        # installed package does not document the scale, so check the first
-        # real flight's /telemetry (a full battery should read ~100, not ~1).
+        # remaining_percent is on a 0..100 scale (confirmed on a real PX4 flight).
         return DroneState(
             px4_time_usec=attitude.timestamp_us or None,
             north_m=ned.north_m,

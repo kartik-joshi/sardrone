@@ -36,7 +36,9 @@ class FlightPlan:
     altitude_m: float = 10.0
     side_m: float = 20.0
     rate_hz: float = 10.0
+    cruise_speed_m_s: float = 3.0  # slow enough for sharp camera frames
     reach_tolerance_m: float = 1.0
+    arrive_speed_m_s: float = 0.5  # "reached" also means "nearly stopped"
     phase_timeout_s: float = 90.0
     # A pretend person on the ground, as (north, east) from the takeoff point.
     # The synthetic camera draws them when the drone is close. This stands in
@@ -167,6 +169,40 @@ class FlightRecorder:
             if self.now_ns > deadline_ns:
                 raise MissionTimeout(f"timed out after {self.plan.phase_timeout_s:g} s: {what}")
 
+    async def _fly_leg(self, start, target, yaw_deg: float, what: str) -> None:
+        """Fly a straight line from `start` to `target` at cruise speed.
+
+        Sending the far corner as one setpoint makes PX4 race there at its
+        maximum speed (10 m/s in the first real flight) and overshoot. So we
+        move the setpoint along the line a little each tick, like a carrot
+        on a stick, and the drone follows at the speed we choose. The leg is
+        done when the drone is at the target AND has nearly stopped.
+        """
+        plan = self.plan
+        period = 1.0 / plan.rate_hz
+        length = math.dist(start, target)
+        travelled = 0.0
+        deadline_ns = self.now_ns + int(plan.phase_timeout_s * NS_PER_SEC)
+        while True:
+            travelled = min(length, travelled + plan.cruise_speed_m_s * period)
+            fraction = travelled / length if length > 0 else 1.0
+            setpoint = [a + fraction * (b - a) for a, b in zip(start, target)]
+            await self.drone.goto_ned(*setpoint, yaw_deg)
+            await self._sleep(period)
+            await self._sample()
+
+            state = self.state
+            distance = math.dist((state.north_m, state.east_m, state.down_m), target)
+            speed = math.hypot(state.v_north_m_s, state.v_east_m_s)
+            if (
+                travelled >= length
+                and distance <= plan.reach_tolerance_m
+                and speed <= plan.arrive_speed_m_s
+            ):
+                return
+            if self.now_ns > deadline_ns:
+                raise MissionTimeout(f"timed out after {plan.phase_timeout_s:g} s: {what}")
+
     # ---- the mission --------------------------------------------------------
 
     async def run(self) -> None:
@@ -191,17 +227,12 @@ class FlightRecorder:
         )
 
         corners = plan.square_corners()
+        leg_start = (north0, east0, cruise_down)
         for index, (d_north, d_east, yaw_deg) in enumerate(corners, start=1):
-            target_north, target_east = north0 + d_north, east0 + d_east
-            await drone.goto_ned(target_north, target_east, cruise_down, yaw_deg)
-            await self._record_until(
-                lambda s: math.dist(
-                    (s.north_m, s.east_m, s.down_m), (target_north, target_east, cruise_down)
-                )
-                <= plan.reach_tolerance_m,
-                f"reach corner {index}",
-            )
+            corner = (north0 + d_north, east0 + d_east, cruise_down)
+            await self._fly_leg(leg_start, corner, yaw_deg, f"reach corner {index}")
             self._event(EVENT_WAYPOINT_REACHED, f"{index}/{len(corners)}")
+            leg_start = corner
 
         await drone.land()
         self._event(EVENT_LAND, "descending")

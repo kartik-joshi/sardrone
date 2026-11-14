@@ -4,7 +4,13 @@ VENV := .venv
 PY   := $(VENV)/bin/python
 PIP  := $(PY) -m pip install --quiet
 
-.PHONY: venv test synthetic record record-fake view clean
+# Where PX4-Autopilot is checked out, and whether Gazebo runs without a window.
+# HEADLESS=1 needs no XQuartz; use `make sim HEADLESS=0` once XQuartz is installed.
+PX4_DIR  ?= ../PX4-Autopilot
+HEADLESS ?= 1
+SHELL    := /bin/bash
+
+.PHONY: venv test synthetic sim record record-fake view clean
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -40,7 +46,14 @@ synthetic: $(VENV)/.dev
 record-fake: $(VENV)/.dev
 	$(PY) -m sardrone.sim.record_flight --fake
 
-# The real thing. Start PX4 first:  cd PX4-Autopilot && make px4_sitl gz_x500
+# Start PX4 SITL + Gazebo (leave it running; Ctrl-C to stop). PX4's own venv
+# puts Gazebo on the PATH; pkg-config is pointed at the same environment.
+sim:
+	cd $(PX4_DIR) && ulimit -S -n 2048 && source .venv/bin/activate && \
+	  export PKG_CONFIG_PATH="$$CONDA_PREFIX/lib/pkgconfig:$$CONDA_PREFIX/share/pkgconfig" && \
+	  HEADLESS=$(HEADLESS) make px4_sitl gz_x500
+
+# The real thing. Run `make sim` in another terminal first.
 record: $(VENV)/.dev $(VENV)/.fly
 	$(PY) -m sardrone.sim.record_flight
 
