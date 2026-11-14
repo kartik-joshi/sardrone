@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sardrone"
+version = "0.1.0"
+description = "Search-and-rescue drone in simulation: MCAP episodes viewed in FiftyOne"
+requires-python = ">=3.11"
+# Everything needed to WRITE an episode (no simulator, no viewer).
+dependencies = [
+    "foxglove-sdk>=0.31",  # writes MCAP with Foxglove protobuf schemas
+    "pillow>=10",          # JPEG encoding for camera frames
+]
+
+[project.optional-dependencies]
+# Tests read episodes back with the independent pure-Python MCAP reader.
+dev = ["pytest>=8", "mcap>=1.2", "mcap-protobuf-support>=0.5"]
+# Talking to PX4. v4 is the native binding; its API differs from mavsdk<4.
+fly = ["mavsdk>=4.2,<5"]
+# The viewer. Large (about 900 MB installed, bundles MongoDB).
+view = ["fiftyone[multimodal]>=1.19"]
+
+[tool.setuptools.packages.find]
+include = ["sardrone*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Third-party noise from FiftyOne and its dependencies, not from this project.
+filterwarnings = [
+    "ignore::DeprecationWarning:fiftyone.*",
+    "ignore::DeprecationWarning:mongoengine.*",
+    "ignore::DeprecationWarning:eta.*",
+]
