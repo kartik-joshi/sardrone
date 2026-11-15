@@ -1,0 +1,218 @@
+{
+  "model": "google/owlv2-base-patch16-ensemble",
+  "frames": 4105,
+  "true_people": 6078,
+  "predicted_person_boxes": 7256,
+  "mAP_50_95": 0.5411,
+  "iou_0.5": [
+    {
+      "threshold": 0.05,
+      "tp": 5040,
+      "fp": 2216,
+      "fn": 1038,
+      "precision": 0.6946,
+      "recall": 0.8292,
+      "f1": 0.756
+    },
+    {
+      "threshold": 0.1,
+      "tp": 4683,
+      "fp": 509,
+      "fn": 1395,
+      "precision": 0.902,
+      "recall": 0.7705,
+      "f1": 0.8311
+    },
+    {
+      "threshold": 0.15,
+      "tp": 4150,
+      "fp": 135,
+      "fn": 1928,
+      "precision": 0.9685,
+      "recall": 0.6828,
+      "f1": 0.8009
+    },
+    {
+      "threshold": 0.2,
+      "tp": 3225,
+      "fp": 31,
+      "fn": 2853,
+      "precision": 0.9905,
+      "recall": 0.5306,
+      "f1": 0.691
+    },
+    {
+      "threshold": 0.25,
+      "tp": 1989,
+      "fp": 6,
+      "fn": 4089,
+      "precision": 0.997,
+      "recall": 0.3272,
+      "f1": 0.4928
+    },
+    {
+      "threshold": 0.3,
+      "tp": 628,
+      "fp": 0,
+      "fn": 5450,
+      "precision": 1.0,
+      "recall": 0.1033,
+      "f1": 0.1873
+    },
+    {
+      "threshold": 0.4,
+      "tp": 37,
+      "fp": 0,
+      "fn": 6041,
+      "precision": 1.0,
+      "recall": 0.0061,
+      "f1": 0.0121
+    }
+  ],
+  "iou_0.3": [
+    {
+      "threshold": 0.05,
+      "tp": 5121,
+      "fp": 2135,
+      "fn": 957,
+      "precision": 0.7058,
+      "recall": 0.8425,
+      "f1": 0.7681
+    },
+    {
+      "threshold": 0.1,
+      "tp": 4732,
+      "fp": 460,
+      "fn": 1346,
+      "precision": 0.9114,
+      "recall": 0.7785,
+      "f1": 0.8398
+    },
+    {
+      "threshold": 0.15,
+      "tp": 4176,
+      "fp": 109,
+      "fn": 1902,
+      "precision": 0.9746,
+      "recall": 0.6871,
+      "f1": 0.8059
+    },
+    {
+      "threshold": 0.2,
+      "tp": 3240,
+      "fp": 16,
+      "fn": 2838,
+      "precision": 0.9951,
+      "recall": 0.5331,
+      "f1": 0.6942
+    },
+    {
+      "threshold": 0.25,
+      "tp": 1993,
+      "fp": 2,
+      "fn": 4085,
+      "precision": 0.999,
+      "recall": 0.3279,
+      "f1": 0.4937
+    },
+    {
+      "threshold": 0.3,
+      "tp": 628,
+      "fp": 0,
+      "fn": 5450,
+      "precision": 1.0,
+      "recall": 0.1033,
+      "f1": 0.1873
+    },
+    {
+      "threshold": 0.4,
+      "tp": 37,
+      "fp": 0,
+      "fn": 6041,
+      "precision": 1.0,
+      "recall": 0.0061,
+      "f1": 0.0121
+    }
+  ],
+  "recall_by_pose": {
+    "lying": {
+      "found": 932,
+      "total": 1166,
+      "recall": 0.7993
+    },
+    "sitting": {
+      "found": 1632,
+      "total": 2172,
+      "recall": 0.7514
+    },
+    "standing": {
+      "found": 2476,
+      "total": 2740,
+      "recall": 0.9036
+    }
+  },
+  "recall_by_occlusion": {
+    "none": {
+      "found": 4647,
+      "total": 5015,
+      "recall": 0.9266
+    },
+    "partial": {
+      "found": 393,
+      "total": 1063,
+      "recall": 0.3697
+    }
+  },
+  "recall_by_size": {
+    "under 16 px": {
+      "found": 378,
+      "total": 766,
+      "recall": 0.4935
+    },
+    "16 to 32 px": {
+      "found": 2135,
+      "total": 2576,
+      "recall": 0.8288
+    },
+    "32 to 64 px": {
+      "found": 2275,
+      "total": 2460,
+      "recall": 0.9248
+    },
+    "64 px and over": {
+      "found": 252,
+      "total": 276,
+      "recall": 0.913
+    }
+  },
+  "recall_by_time_of_day": {
+    "dusk": {
+      "found": 2530,
+      "total": 2751,
+      "recall": 0.9197
+    },
+    "golden_hour": {
+      "found": 1334,
+      "total": 1723,
+      "recall": 0.7742
+    },
+    "noon": {
+      "found": 1176,
+      "total": 1604,
+      "recall": 0.7332
+    }
+  },
+  "other_classes": {
+    "jacket": 1723,
+    "backpack": 3970,
+    "tent": 2924
+  },
+  "review_queue": {
+    "boxes": 362,
+    "frames": 310,
+    "cutoff": 0.055,
+    "correct_in_queue": 36
+  },
+  "commit": "71571aa",
+  "dirty": false
+}

@@ -162,6 +162,40 @@ open terrain that matches the label count in 92.6 % of frames; under trees
 only 63.3 %, because the labels (correctly) leave out people the canopy
 hides.
 
+## Curate, embed, auto-label (Phase 2E)
+
+```bash
+make curate      # embeddings, 2D map, near-duplicates, train/val split, saved views
+```
+
+```bash
+make autolabel   # OWLv2 auto-labels, scored against ground truth (about 35 min)
+```
+
+`make curate` embeds every frame with CLIP, tags near-duplicates, marks two
+whole episodes as validation and saves the views `train-v1` (3,472 frames),
+`val-v1` (633) and `sar-hard-cases` (2,480). The map below places similar
+pictures close together:
+
+![embedding map](docs/images/phase2e_umap.png)
+
+Frames group by world and lighting, not by whether a person is present: a
+30-pixel person is too small to move a whole-image embedding.
+
+`make autolabel` asks an open-vocabulary detector for people and then
+measures it against the simulator's exact labels
+([full report](docs/results/auto_labeler.md)):
+
+| Confidence at least | Precision | Recall |
+| --- | --- | --- |
+| 0.05 | 0.695 | 0.829 |
+| 0.10 | 0.902 | 0.770 |
+| 0.20 | 0.991 | 0.531 |
+
+It finds 93 % of people in the open but 37 % of those under trees, and 49 %
+of those under 16 px. Those are simulated images; the point is the method:
+an auto-labeller's errors are measured before its labels are trusted.
+
 ## What is verified, and what is not
 
 | Part | Status |
@@ -177,6 +211,8 @@ hides.
 | Search state machine | Tested with `FakeDrone`: find-all, nobody seen, false alarm, low battery, illegal transition. One real PX4 flight found 3 of 3 with the oracle. Low battery was not tried on PX4 |
 | Batch runner | Bookkeeping tested with a stand-in runner (resume, retry, timeout, disk limit). One real batch of 10 completed with no failures, so retry and timeout have not been exercised against the simulator |
 | Image labels | From Gazebo's bounding-box sensor. Reader, dataset and overlay code tested; 20 random overlays from the real batch checked by eye; box counts cross-checked against geometry on all 4,678 frames |
+| Curation | De-duplication, split and saved views tested on a hand-made dataset; threshold chosen from a sweep on the pilot data |
+| Auto-labeller | Scoring code tested against numbers worked out by hand; one full run on 4,105 frames |
 | Person detection | Not implemented. The `person_seen` event is still scripted from the drone's position; the default Gazebo world has no person in it |
 | Gazebo window (GUI) | Not tried: it needs XQuartz, which needs an admin password to install |
 
@@ -215,6 +251,9 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `sardrone/mcap/reader.py` | Reads labelled frames back out of an episode |
 | `sardrone/fo/frames.py` | Builds the `sar-frames` image dataset with ground-truth Detections |
 | `sardrone/fo/overlay.py` | Random frames with boxes drawn, for a human check |
+| `sardrone/fo/env.py` | FiftyOne settings; keeps database and model weights inside the project |
+| `sardrone/fo/curate.py` | Embeddings, map, near-duplicates, split, saved views |
+| `sardrone/fo/autolabel.py` | OWLv2 auto-labels and their score against ground truth |
 | `sardrone/fo/load.py` | Builds the `sar-episodes` dataset and launches the App |
 | `data/episodes/` | `.mcap` + `.json` output (git-ignored) |
 
@@ -424,6 +463,14 @@ Known limits:
   because only visible pixels count. Then I cross-checked the counts against
   geometry and looked at random overlays, because exact-looking labels that
   nobody has looked at are the classic way to train on garbage."
+- **Auto-labelling:** "I ran an open-vocabulary detector as an
+  auto-labeller and scored it against simulator ground truth. At 90 %
+  precision it missed a quarter of the people, and recall under trees was
+  37 % against 93 % in the open. So auto-labels are a first draft: I route
+  the least confident 5 % to review, where only one box in ten was right."
+- **Leakage:** "I split by episode, not by frame. Frames from one flight
+  are near-copies of each other, so a per-frame split would test the model
+  on scenes it has effectively seen."
 - **Testability:** "The mission is written against a five-method `Drone`
   interface. A fake drone with its own simulated clock lets the whole
   arm-takeoff-square-land sequence, including the timeout-and-land failure

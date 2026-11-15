@@ -304,3 +304,110 @@ is what the overlays are for.
   they are near-duplicates. Phase 2E deals with that.
 - All frames come from flights where the oracle steered the drone towards
   people, so people are over-represented compared with a blind search.
+
+## Phase 2E - The FiftyOne loop: curate, embed, label (2026-11-15)
+
+### Done
+
+- `make curate`: CLIP ViT-B/32 embeddings (stored as unit vectors), a
+  similarity index and a UMAP map through `fiftyone.brain`, near-duplicate
+  tagging, a train/val split by whole episode, and saved views.
+- `make autolabel`: OWLv2 (`google/owlv2-base-patch16-ensemble`) prompted
+  with "a person", "a backpack", "a tent", "a jacket" writes `auto_labels`;
+  those are scored against ground truth and the least confident 5 % become
+  a review queue.
+- New `ml` extra: torch 2.15, torchvision, transformers 5.23, umap-learn.
+  Model weights are cached in `.cache/` inside the project (about 950 MB).
+
+### Results on the pilot data (4,678 frames, 11 episodes)
+
+| | |
+| --- | --- |
+| Embedding time | 65 s for 4,678 frames (CPU) |
+| Near-duplicates tagged | 573 (12.2 %) at cosine distance 0.006; 5 of them show a different number of people than the frame kept |
+| Split | train 3,937 frames (9 episodes), val 741 (pilot-009, pilot-010) |
+| `train-v1` | 3,472 frames (train, duplicates left out) |
+| `val-v1` | 633 frames |
+| `sar-hard-cases` | 2,480 frames (lying, occluded, under 16 px, or anyone at dusk) |
+| `sar-false-alarms` | 0 (filled when the first trained model is evaluated) |
+
+Threshold sweep (within-episode cosine distance):
+
+| Threshold | Tagged | Share | Different people count |
+| --- | --- | --- | --- |
+| 0.002 | 86 | 1.8 % | 0 |
+| 0.003 | 205 | 4.4 % | 0 |
+| 0.004 | 326 | 7.0 % | 1 |
+| 0.006 | 573 | 12.2 % | 5 |
+| 0.010 | 1241 | 26.5 % | 41 |
+| 0.015 | 2132 | 45.6 % | 127 |
+
+0.006 is the largest value at which under 1 % of the removed frames differ
+in people count from the frame kept (5 of 573 = 0.9 %).
+
+### Auto-labeller against ground truth (commit 71571aa, 4,105 unique frames, 6,078 people)
+
+Full tables: `docs/results/auto_labeler.md`.
+
+- mAP@0.5:0.95 for `person`: 0.541.
+- Best F1 0.831 at confidence 0.1: precision 0.902, recall 0.770.
+- At confidence 0.2: precision 0.991, recall 0.531. At 0.05: precision
+  0.695, recall 0.829.
+- Recall by occlusion: 0.927 in the open, 0.370 under trees.
+- Recall by size: 0.493 under 16 px, 0.829 at 16 to 32 px, 0.925 at 32 to 64 px.
+- Recall by pose: standing 0.904, lying 0.799, sitting 0.751.
+- It also drew 3,970 "backpack", 2,924 "tent" and 1,723 "jacket" boxes.
+  The worlds contain no backpacks or tents, so those 6,894 are all wrong.
+- Review queue: 362 boxes at confidence 0.055 or less, 36 of them correct.
+- Speed: 0.52 s per frame on the Mac's GPU (MPS), 35 min for the run.
+
+### What this means
+
+- **An auto-labeller is a starting point, not a labeller.** At a cut-off
+  that keeps 9 in 10 boxes correct it misses nearly a quarter of the
+  people, and it misses exactly the hard ones: under trees and small.
+  Training only on its labels would teach a model to ignore those.
+- **Its confidence is not a probability.** No box scores above about 0.45,
+  and the useful cut-offs are between 0.05 and 0.2. A cut-off must be
+  chosen from data like this, not assumed.
+- **The review queue works as intended.** Only 10 % of the least confident
+  boxes are right, so that is where a human's time removes the most errors.
+- **The map shows how narrow the data is.** Frames group by world and
+  lighting, which here means by episode, into about ten islands. Whether a
+  person is in the frame barely moves a picture on the map: at 30 px a
+  person is too small to change a whole-image embedding. So this map can
+  show scene variety, but not label variety.
+
+### What broke, and what was learned
+
+- **FiftyOne's duplicate finder did not behave like a cosine threshold.**
+  At a threshold of 0.005 it found no duplicates although 1,678 pairs are
+  closer than that, and the distances it reported did not match cosine or
+  Euclidean distance on the same vectors, before or after I normalised
+  them. I did not find out why. Rather than tune a number I could not
+  explain, de-duplication is 25 lines of explicit code on the same
+  embeddings, with hand-worked tests. The first commit of this phase
+  never contained the FiftyOne-based version; an earlier run of mine
+  (504 tagged at "0.05") is superseded.
+- **My guess about confirmation orbits was wrong.** In Phase 2D I wrote
+  that the 31 % of frames from orbits are near-duplicates. Measured, only
+  82 of the 573 duplicates are orbit frames; 298 are from the search lanes,
+  where the drone flies over plain grass. Circling changes the picture more
+  than flying straight over an empty field.
+- **Worker processes crashed** when embeddings were computed from a
+  script fed through a pipe; images are now loaded in the main process.
+- **I broke three modules for a minute** by removing `import os` while its
+  uses remained. The test suite caught it before the commit.
+
+### How far to trust this
+
+- Every number is on SIMULATED images. OWLv2 was trained on real photos,
+  so its scores here are not its scores on real drone footage, in either
+  direction.
+- The time-of-day figures are confounded. Dusk has the highest recall
+  (0.920) only because all three dusk episodes happen to have no occlusion.
+- IoU 0.5 is strict for 30 px boxes, but loosening it to 0.3 changes
+  recall by about 1 point, so localisation is not the problem; missing
+  people is.
+- The val split is two pilot episodes. It is enough to debug training, not
+  to report results. The plan's 60 + 15 episode dataset is not recorded yet.
