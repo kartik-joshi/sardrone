@@ -41,8 +41,8 @@ class FlightPlan:
     arrive_speed_m_s: float = 0.5  # "reached" also means "nearly stopped"
     phase_timeout_s: float = 90.0
     # A pretend person on the ground, as (north, east) from the takeoff point.
-    # The synthetic camera draws them when the drone is close. This stands in
-    # for a real detector until the Gazebo camera is wired up.
+    # The synthetic camera draws them when the drone is close. The sighting
+    # is decided from the drone's position: it stands in for a real detector.
     person_north_east_m: tuple[float, float] | None = (20.0, 20.0)
     person_sighting_radius_m: float = 3.0
 
@@ -261,11 +261,14 @@ async def record_flight(
     await drone.connect()
     try:
         await drone.wait_until_ready()
-        with EpisodeWriter(path, meta, overwrite=overwrite) as episode:
+        camera = camera or SyntheticCamera()
+        with EpisodeWriter(
+            path, meta, overwrite=overwrite, camera_mount_m=camera.mount_m
+        ) as episode:
             recorder = FlightRecorder(
                 drone,
                 episode,
-                camera or SyntheticCamera(),
+                camera,
                 plan=plan,
                 sleep=sleep,
                 start_wall_ns=start_wall_ns,
@@ -291,6 +294,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="output .mcap (default: next flight-NNNN)")
     parser.add_argument("--fake", action="store_true", help="use FakeDrone, no simulator")
     parser.add_argument("--overwrite", action="store_true", help="replace an existing --out file")
+    parser.add_argument(
+        "--camera",
+        choices=("synthetic", "gazebo"),
+        default="synthetic",
+        help="synthetic = generated test images; gazebo = the simulated camera",
+    )
+    parser.add_argument(
+        "--gz-model", default="x500_mono_cam_0", help="Gazebo model name that carries the camera"
+    )
     parser.add_argument("--world", default="default")
     parser.add_argument("--weather", default="clear")
     parser.add_argument("--time-of-day", default="noon")
@@ -319,9 +331,26 @@ def main(argv: list[str] | None = None) -> int:
         drone = MavsdkDrone(args.url)
         sleep = asyncio.sleep
 
+    camera = None  # record_flight falls back to SyntheticCamera
+    if args.camera == "gazebo":
+        if args.fake:
+            print("error: --camera gazebo needs the simulator, not --fake", file=sys.stderr)
+            return 1
+        from sardrone.sim.camera import CameraError, GazeboCamera
+
+        try:
+            # Open first: a missing camera should stop us BEFORE the drone arms.
+            camera = GazeboCamera(model=args.gz_model, world=args.world).open()
+        except CameraError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+        print(f"camera: {camera.width}x{camera.height}, hfov {camera.hfov_deg:.1f} deg")
+
     try:
         episode = asyncio.run(
-            record_flight(drone, path, meta, sleep=sleep, overwrite=args.overwrite)
+            record_flight(
+                drone, path, meta, camera=camera, sleep=sleep, overwrite=args.overwrite
+            )
         )
     except KeyboardInterrupt:
         print("interrupted - land was commanded; the partial episode was saved", file=sys.stderr)
@@ -329,6 +358,9 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as error:  # noqa: BLE001 - top-level CLI error report
         print(f"error: {error}", file=sys.stderr)
         return 1
+    finally:
+        if camera is not None:
+            camera.close()
 
     sidecar = episode.sidecar()
     print(f"wrote {episode.path}  ({sidecar['duration_s']:.1f} s, success={sidecar['success']})")

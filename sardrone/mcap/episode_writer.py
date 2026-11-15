@@ -120,8 +120,18 @@ class EpisodeWriter:
             ep.meta.success = True
     """
 
-    def __init__(self, path, meta: EpisodeMeta, *, overwrite: bool = False):
+    def __init__(
+        self,
+        path,
+        meta: EpisodeMeta,
+        *,
+        overwrite: bool = False,
+        camera_mount_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    ):
+        """`camera_mount_m` is where the camera sits on the drone, in metres,
+        in the body frame (x forward, y left, z up)."""
         self.path = Path(path)
+        self.camera_mount_m = tuple(float(v) for v in camera_mount_m)
         if self.path.suffix != ".mcap":
             raise ValueError(f"episode path must end in .mcap, got {self.path}")
         self.sidecar_path = self.path.with_suffix(".json")
@@ -266,7 +276,9 @@ class EpisodeWriter:
             timestamp=timestamp,
             parent_frame_id=FRAME_BODY,
             child_frame_id=FRAME_CAMERA,
-            translation=msgs.Vector3(x=0.0, y=0.0, z=0.0),
+            translation=msgs.Vector3(
+                x=self.camera_mount_m[0], y=self.camera_mount_m[1], z=self.camera_mount_m[2]
+            ),
             rotation=_quat_msg(CAMERA_IN_BODY),
         )
         self._log(self._tf, TOPIC_TF, mount.encode(), wall_ns)

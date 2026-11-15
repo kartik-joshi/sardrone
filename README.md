@@ -20,12 +20,16 @@ make view          # load every episode into FiftyOne and open http://localhost:
 PX4, start the simulator in one terminal and record from another:
 
 ```bash
-make sim           # PX4 SITL + Gazebo, headless; leave it running
+make sim           # PX4 SITL + Gazebo with a forward camera, headless; leave it running
 ```
 
 ```bash
-make record        # arm, take off to 10 m, fly a 20 m square, land -> flight-0001.mcap
+make record        # arm, take off to 10 m, fly a 20 m square, land -> flight-NNNN.mcap
 ```
+
+`make record` takes its images from the simulated camera. For the plain
+drone without a camera use `make sim SIM_MODEL=gz_x500` and
+`make record CAMERA=synthetic`.
 
 `make sim` expects PX4 in `../PX4-Autopilot`; override with
 `make sim PX4_DIR=/path/to/PX4-Autopilot`. See [PX4 setup](#px4-setup).
@@ -38,7 +42,8 @@ make record        # arm, take off to 10 m, fly a 20 m square, land -> flight-00
 | Mission logic in `record_flight.py` | Tested end to end with `FakeDrone` on simulated time |
 | FiftyOne dataset + App | Tested; viewer checked by hand: 3D, camera, map and log tiles replay with no warnings |
 | `MavsdkDrone` against a running PX4 | Flown on PX4 SITL v1.18 + Gazebo Harmonic (`gz_x500`, headless), from a cold start. Not part of `make test`, which must run without a simulator |
-| Gazebo camera | Not implemented (`GazeboCamera` is a documented TODO); frames are synthetic |
+| Gazebo camera | Byte protocol and `GazeboCamera` tested without a simulator (stand-in bridge). Flown once on `gz_x500_mono_cam`, headless: 591 frames at 1280x960, checked in FiftyOne |
+| Person detection | Not implemented. The `person_seen` event is still scripted from the drone's position; the default Gazebo world has no person in it |
 | Gazebo window (GUI) | Not tried: it needs XQuartz, which needs an admin password to install |
 
 Numbers from the recorded real flight (`flight-0001`, 61.6 s): cruise height
@@ -54,7 +59,8 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `sardrone/mcap/frames.py` | NED/FRD (PX4) to ENU/FLU (Z-up) for positions and quaternions |
 | `sardrone/mcap/geo.py` | Metres from home to latitude/longitude and back |
 | `sardrone/mcap/episode_writer.py` | `EpisodeWriter`: channels, schemas, sidecar |
-| `sardrone/sim/camera.py` | `CameraSource` interface, `SyntheticCamera`, `GazeboCamera` TODO |
+| `sardrone/sim/camera.py` | `CameraSource` interface, `SyntheticCamera`, `GazeboCamera` |
+| `sardrone/sim/gz_image_bridge.py` | Helper run by Gazebo's own Python; pipes camera frames to `GazeboCamera` |
 | `sardrone/sim/drone.py` | `Drone` interface, `DroneState`, `FakeDrone` |
 | `sardrone/sim/mavsdk_drone.py` | `MavsdkDrone`: the PX4 implementation |
 | `sardrone/sim/record_flight.py` | The mission and the 10 Hz recorder |
@@ -160,18 +166,45 @@ back to this computer's monotonic clock for the whole episode (still one
 clock); and if a waypoint is not reached in 90 s the mission stops with a
 timeout, commands a landing and saves the partial episode.
 
-## The camera TODO
+## The Gazebo camera
 
-`make px4_sitl gz_x500` has no camera. The x500 variants with one, confirmed
-in the local checkout (`Tools/simulation/gz/models`), are `x500_mono_cam`
-(forward), `x500_mono_cam_down` (downward), `x500_depth` (forward depth) and
-`x500_gimbal`.
+`make sim` starts `gz_x500_mono_cam`, the x500 with a forward camera
+(1280x960, 99.7 degree horizontal field of view, 30 Hz). Other camera models
+in the checkout are `x500_mono_cam_down`, `x500_depth` and `x500_gimbal`.
 
-`GazeboCamera` in `sardrone/sim/camera.py` lists the steps to implement it.
-Until then, `SyntheticCamera` draws a scrolling ground grid and an orange
-marker when the drone is within 3 m of a scripted "person" at the far corner
-of the square. That marker, and the `person_seen` event it triggers, are
-placeholders for a real detector.
+```
+ Gazebo ──gz-transport──> gz_image_bridge.py ──pipe──> GazeboCamera ──JPEG──> EpisodeWriter
+          (Gazebo's Python 3.13)                (project venv, reader thread)
+```
+
+- **Two Pythons.** Gazebo's Python bindings exist only in the Python that
+  ships with Gazebo and cannot be installed into this venv. So a small helper
+  runs there and pipes raw frames over stdout: one JSON line with the lens,
+  then a fixed header plus pixels per frame.
+- **Newest frame only.** The bridge forwards at most 10 frames per second and
+  the reader keeps one, so a slow recorder never logs a queue of old images.
+  An image can be up to one render interval (1/30 s) older than its pose.
+- **Fail loudly.** The camera is opened before the drone arms. No image within
+  15 s, a bridge that exits, or no new frame for 3 s each raise an error
+  instead of silently repeating a picture.
+- **Calibration from the simulator.** Field of view comes from Gazebo's
+  `camera_info`, and the mount position (12 cm forward, 3 cm left, 24 cm up)
+  from the model's SDF; it is written into the `base_link → camera_front`
+  transform.
+
+Known limits:
+
+- The default world is a flat grey plane, so the pictures show a horizon and
+  the propellers. There is no person to see; `person_seen` is still scripted.
+- Gazebo prints "Unable to load Ogre Plugin ... Rendering will not be
+  possible" at startup when headless on this Mac. Images are rendered anyway.
+  The cause was not found.
+- `gz topic` and other Gazebo tools need `GZ_IP=127.0.0.1` on this setup,
+  because PX4 runs Gazebo on the loopback interface.
+- Start `make sim` from a real terminal. Without one, PX4's console prints
+  its prompt endlessly.
+
+`SyntheticCamera` remains for tests and for `make record-fake`.
 
 ## Decisions that differ from the original brief
 
@@ -207,6 +240,11 @@ placeholders for a real detector.
   flight still cruised 2 m too high and overshot corners at 10 m/s. I found
   that by reading the recorded episode, which is the point of recording
   everything on one timeline."
+- **Process boundary:** "The simulator's Python bindings could not be
+  installed in my environment, so I put a 100-line bridge in the simulator's
+  Python and defined a tiny binary protocol between them. The protocol is
+  pure byte parsing, so it is unit-tested with in-memory streams and a
+  stand-in bridge, with no simulator."
 - **Testability:** "The mission is written against a five-method `Drone`
   interface. A fake drone with its own simulated clock lets the whole
   arm-takeoff-square-land sequence, including the timeout-and-land failure

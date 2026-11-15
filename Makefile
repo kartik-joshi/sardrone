@@ -8,6 +8,11 @@ PIP  := $(PY) -m pip install --quiet
 # HEADLESS=1 needs no XQuartz; use `make sim HEADLESS=0` once XQuartz is installed.
 PX4_DIR  ?= ../PX4-Autopilot
 HEADLESS ?= 1
+# The simulated drone. gz_x500_mono_cam has a forward camera; plain gz_x500 has
+# none (then record with `make record CAMERA=synthetic`).
+SIM_MODEL ?= gz_x500_mono_cam
+CAMERA    ?= gazebo
+GZ_MODEL  := $(patsubst gz_%,%,$(SIM_MODEL))_0
 SHELL    := /bin/bash
 
 .PHONY: venv test synthetic sim record record-fake view clean
@@ -51,11 +56,12 @@ record-fake: $(VENV)/.dev
 sim:
 	cd $(PX4_DIR) && ulimit -S -n 2048 && source .venv/bin/activate && \
 	  export PKG_CONFIG_PATH="$$CONDA_PREFIX/lib/pkgconfig:$$CONDA_PREFIX/share/pkgconfig" && \
-	  HEADLESS=$(HEADLESS) make px4_sitl gz_x500
+	  HEADLESS=$(HEADLESS) make px4_sitl $(SIM_MODEL)
 
 # The real thing. Run `make sim` in another terminal first.
 record: $(VENV)/.dev $(VENV)/.fly
-	$(PY) -m sardrone.sim.record_flight
+	SARDRONE_GZ_PYTHON=$(PX4_DIR)/Tools/setup/macos/.pixi/envs/default/bin/python \
+	  $(PY) -m sardrone.sim.record_flight --camera $(CAMERA) --gz-model $(GZ_MODEL)
 
 # sardrone.fo.load sets VFF_MULTIMODAL=1 itself, before importing fiftyone;
 # it is repeated here so the requirement is visible.
