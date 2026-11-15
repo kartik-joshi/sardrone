@@ -20,13 +20,14 @@ Design rules enforced here:
 """
 
 import json
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import foxglove
 from foxglove import messages as msgs
 
-from sardrone.mcap.frames import Quat, ned_quat_to_enu, ned_to_enu
+from sardrone.mcap.frames import Quat, ned_quat_to_enu, ned_to_enu, quat_from_rpy, quat_multiply
 from sardrone.mcap.timeutil import NS_PER_SEC, safe_ts
 
 # ---- topics -----------------------------------------------------------------
@@ -38,6 +39,7 @@ TOPIC_POSE = "/pose"
 TOPIC_TF = "/tf"
 TOPIC_TELEMETRY = "/telemetry"
 TOPIC_EVENTS = "/events"
+TOPIC_GROUND_TRUTH_PEOPLE = "/ground_truth/people"
 
 # ---- coordinate frame names -------------------------------------------------
 
@@ -49,6 +51,18 @@ FRAME_CAMERA = "camera_front"  # optical: x right, y down, z into the image
 # looking straight ahead: optical z -> body forward, optical x -> body right,
 # optical y -> body down.
 CAMERA_IN_BODY = Quat(w=0.5, x=-0.5, y=0.5, z=-0.5)
+
+
+def camera_in_body(pitch_deg: float) -> Quat:
+    """Rotation of the optical frame inside the body frame for a camera
+    tilted `pitch_deg` DOWN from straight ahead (0 = ahead, 90 = down).
+
+    The body's y axis points left, so by the right-hand rule a positive
+    turn about it tips the forward axis towards the ground. The tilt is
+    applied after the forward-looking mount: q = q_tilt * CAMERA_IN_BODY.
+    """
+    tilt = quat_from_rpy(0.0, math.radians(pitch_deg), 0.0)
+    return quat_multiply(tilt, CAMERA_IN_BODY)
 
 # ---- events -----------------------------------------------------------------
 
@@ -127,11 +141,19 @@ class EpisodeWriter:
         *,
         overwrite: bool = False,
         camera_mount_m: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        camera_pitch_deg: float = 0.0,
+        extra_sidecar: dict | None = None,
     ):
         """`camera_mount_m` is where the camera sits on the drone, in metres,
-        in the body frame (x forward, y left, z up)."""
+        in the body frame (x forward, y left, z up). `camera_pitch_deg` is
+        how far it looks down: 0 = straight ahead, 90 = straight down.
+        `extra_sidecar` is merged into the JSON sidecar (world id, seed, ...).
+        """
         self.path = Path(path)
         self.camera_mount_m = tuple(float(v) for v in camera_mount_m)
+        self.camera_pitch_deg = float(camera_pitch_deg)
+        self.camera_in_body = camera_in_body(self.camera_pitch_deg)
+        self.extra_sidecar = dict(extra_sidecar or {})
         if self.path.suffix != ".mcap":
             raise ValueError(f"episode path must end in .mcap, got {self.path}")
         self.sidecar_path = self.path.with_suffix(".json")
@@ -151,6 +173,7 @@ class EpisodeWriter:
         self._pose = self._protobuf_channel(TOPIC_POSE, msgs.PoseInFrame)
         self._tf = self._protobuf_channel(TOPIC_TF, msgs.FrameTransform)
         self._events = self._protobuf_channel(TOPIC_EVENTS, msgs.Log)
+        self._people = self._protobuf_channel(TOPIC_GROUND_TRUTH_PEOPLE, msgs.SceneUpdate)
         self._telemetry = foxglove.Channel(
             TOPIC_TELEMETRY,
             schema=foxglove.Schema(
@@ -279,7 +302,7 @@ class EpisodeWriter:
             translation=msgs.Vector3(
                 x=self.camera_mount_m[0], y=self.camera_mount_m[1], z=self.camera_mount_m[2]
             ),
-            rotation=_quat_msg(CAMERA_IN_BODY),
+            rotation=_quat_msg(self.camera_in_body),
         )
         self._log(self._tf, TOPIC_TF, mount.encode(), wall_ns)
 
@@ -320,6 +343,45 @@ class EpisodeWriter:
         self._log(self._events, TOPIC_EVENTS, log.encode(), wall_ns)
         self.event_counts[event] = self.event_counts.get(event, 0) + 1
 
+    def log_ground_truth_people(self, wall_ns: int, people: list[dict]) -> None:
+        """The TRUE position of every person, as 3D boxes in the `map` frame.
+
+        This is the answer key the simulator gives us for free. Each person
+        is a dict with `id`, `box_centre` (x, y, z in map), `box_size`,
+        `box_quat_wxyz`, plus `pose`, `clothing` and `occlusion` labels.
+        Written as a foxglove.SceneUpdate, so 3D viewers draw the boxes.
+        """
+        entities = []
+        for person in people:
+            cx, cy, cz = person["box_centre"]
+            sx, sy, sz = person["box_size"]
+            w, x, y, z = person["box_quat_wxyz"]
+            entities.append(
+                msgs.SceneEntity(
+                    timestamp=_ts(wall_ns),
+                    frame_id=FRAME_WORLD,
+                    id=person["id"],
+                    frame_locked=True,
+                    metadata=[
+                        msgs.KeyValuePair(key=key, value=str(person[key]))
+                        for key in ("pose", "clothing", "occlusion")
+                        if key in person
+                    ],
+                    cubes=[
+                        msgs.CubePrimitive(
+                            pose=msgs.Pose(
+                                position=msgs.Vector3(x=cx, y=cy, z=cz),
+                                orientation=msgs.Quaternion(x=x, y=y, z=z, w=w),
+                            ),
+                            size=msgs.Vector3(x=sx, y=sy, z=sz),
+                            color=msgs.Color(r=0.1, g=0.9, b=0.2, a=0.45),
+                        )
+                    ],
+                )
+            )
+        update = msgs.SceneUpdate(entities=entities)
+        self._log(self._people, TOPIC_GROUND_TRUTH_PEOPLE, update.encode(), wall_ns)
+
     # ---- finishing ----------------------------------------------------------
 
     def sidecar(self) -> dict:
@@ -329,6 +391,9 @@ class EpisodeWriter:
             "episode_id": self.path.stem,
             "mcap_file": self.path.name,
             **asdict(self.meta),
+            "camera_pitch_deg": self.camera_pitch_deg,
+            "camera_mount_m": list(self.camera_mount_m),
+            **self.extra_sidecar,
             "start_time_ns": self._first_ns,
             "duration_s": (self._last_ns - self._first_ns) / NS_PER_SEC if has_data else 0.0,
             "message_counts": dict(sorted(self.message_counts.items())),

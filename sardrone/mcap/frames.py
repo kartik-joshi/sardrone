@@ -105,6 +105,17 @@ def quat_from_yaw(yaw_rad: float) -> Quat:
     return Quat(math.cos(yaw_rad / 2), 0.0, 0.0, math.sin(yaw_rad / 2))
 
 
+def quat_from_rpy(roll_rad: float, pitch_rad: float, yaw_rad: float) -> Quat:
+    """Roll, pitch, yaw (the order SDF uses in <pose>) as one quaternion.
+
+    The rotations are applied about the FIXED axes x, then y, then z, which
+    is the same as R = Rz(yaw) * Ry(pitch) * Rx(roll).
+    """
+    q_roll = Quat(math.cos(roll_rad / 2), math.sin(roll_rad / 2), 0.0, 0.0)
+    q_pitch = Quat(math.cos(pitch_rad / 2), 0.0, math.sin(pitch_rad / 2), 0.0)
+    return quat_multiply(quat_from_yaw(yaw_rad), quat_multiply(q_pitch, q_roll))
+
+
 # ---- attitude conversion ----------------------------------------------------
 
 

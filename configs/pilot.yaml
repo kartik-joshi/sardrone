@@ -1,0 +1,31 @@
+# Phase 2A: three seeded worlds that show the generator working.
+# Small areas so one short flight sees everybody.
+defaults:
+  area_m: 60
+  camera_pitch_deg: 45
+
+episodes:
+  - id: pilot-meadow
+    world: meadow
+    seed: 101
+    people: 3
+    poses: [standing, sitting, lying]
+    occlusion: none
+    time_of_day: noon
+    altitude_m: 15
+
+  - id: pilot-forest
+    world: forest_edge
+    seed: 202
+    people: 4
+    occlusion: partial
+    time_of_day: golden_hour
+    altitude_m: 15
+
+  - id: pilot-park
+    world: park
+    seed: 303
+    people: 5
+    occlusion: none
+    time_of_day: dusk
+    altitude_m: 25

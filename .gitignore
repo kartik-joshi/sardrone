@@ -10,3 +10,7 @@ data/episodes/*
 
 # Local FiftyOne database (rebuilt by `make view`)
 .fiftyone/
+data/worlds/
+assets/
+runs/
+.env

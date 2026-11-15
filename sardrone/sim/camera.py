@@ -26,6 +26,7 @@ class CameraSource(Protocol):
     height: int
     hfov_deg: float  # horizontal field of view
     mount_m: tuple[float, float, float]  # position on the drone: forward, left, up
+    pitch_deg: float  # how far it looks down: 0 = straight ahead, 90 = straight down
 
     def read(self) -> bytes:
         """Return the next frame as JPEG bytes."""
@@ -51,6 +52,7 @@ class SyntheticCamera:
         self.height = height
         self.hfov_deg = hfov_deg
         self.mount_m = (0.0, 0.0, 0.0)
+        self.pitch_deg = 0.0
         self.frame_index = 0
         self.person_visible = False
         self.caption = ""
@@ -191,9 +193,13 @@ class GazeboCamera:
     `sim_time_ns` holds the simulator time of the last frame returned.
     """
 
-    # Where PX4's x500_mono_cam model puts the camera on the drone
-    # (Tools/simulation/gz/models/x500_mono_cam/model.sdf, <pose>.12 .03 .242).
-    mount_m = (0.12, 0.03, 0.242)
+    # Where PX4's x500_mono_cam model puts the camera, measured from the
+    # drone's body origin (base_link). Its SDF says <pose>.12 .03 .242, but
+    # that is from the MODEL origin, and base_link itself sits 0.24 m above
+    # the model origin, so the camera is only 2 mm above base_link.
+    # Our own x500_sar_cam model passes its mount and pitch explicitly.
+    mount_m = (0.12, 0.03, 0.002)
+    pitch_deg = 0.0
 
     def __init__(
         self,
@@ -205,7 +211,13 @@ class GazeboCamera:
         jpeg_quality: int = 85,
         start_timeout_s: float = 15.0,
         stale_after_s: float = 3.0,
+        mount_m: tuple[float, float, float] | None = None,
+        pitch_deg: float | None = None,
     ):
+        if mount_m is not None:
+            self.mount_m = tuple(mount_m)
+        if pitch_deg is not None:
+            self.pitch_deg = float(pitch_deg)
         base = f"/world/{world}/model/{model}/link/camera_link/sensor/camera"
         self.topic = f"{base}/image"
         self.info_topic = f"{base}/camera_info"

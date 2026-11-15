@@ -218,5 +218,6 @@ def test_camera_mount_position_is_written_to_tf(tmp_path):
     mounts = [t for t in Episode(path).decoded(TOPIC_TF) if t.child_frame_id == "camera_front"]
     assert len(mounts) == 1
     t = mounts[0].translation
-    # 12 cm forward, 3 cm left, 24.2 cm up (x500_mono_cam/model.sdf).
-    assert (t.x, t.y, t.z) == pytest.approx((0.12, 0.03, 0.242))
+    # 12 cm forward, 3 cm left, 2 mm above base_link. (The SDF's 0.242 is
+    # from the model origin; base_link is 0.24 above that.)
+    assert (t.x, t.y, t.z) == pytest.approx((0.12, 0.03, 0.002))

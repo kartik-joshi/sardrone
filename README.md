@@ -5,7 +5,10 @@ A search-and-rescue drone in simulation. Each flight is recorded as **one
 loaded into **FiftyOne's multimodal viewer**, where camera, GPS, pose and
 events replay on a single timeline.
 
-Week 1 scope: the recording and viewing pipeline. Detection comes later.
+Week 1 built the recording and viewing pipeline. Phase 2A added generated
+worlds with people in them. The full plan is in [docs/PLAN.md](docs/PLAN.md),
+and [docs/DEVLOG.md](docs/DEVLOG.md) records what broke along the way.
+Detection comes later.
 
 ## Quick start
 
@@ -34,6 +37,41 @@ drone without a camera use `make sim SIM_MODEL=gz_x500` and
 `make sim` expects PX4 in `../PX4-Autopilot`; override with
 `make sim PX4_DIR=/path/to/PX4-Autopilot`. See [PX4 setup](#px4-setup).
 
+## Generated worlds (Phase 2A)
+
+```bash
+make assets                      # download people and tree models (45 MB, once)
+make preview ROW=pilot-meadow    # build the world and render it from fixed cameras
+```
+
+```bash
+make sim-world ROW=pilot-meadow  # Gazebo on that world + PX4; leave it running
+```
+
+```bash
+make record-world ROW=pilot-meadow
+```
+
+A row of [configs/pilot.yaml](configs/pilot.yaml) names a world type, a seed,
+the number of people, their poses, occlusion, time of day and altitude. The
+generator turns it into `data/worlds/<id>/` holding `world.sdf` (the Gazebo
+world), `spec.json` (every object's exact pose, which is the ground truth)
+and the drone model with its camera pitched 45 degrees down.
+
+| | Meadow, noon | Forest edge, golden hour | Park, dusk |
+| --- | --- | --- | --- |
+| Overview | ![meadow](docs/images/phase2a/meadow_overview.jpg) | ![forest](docs/images/phase2a/forest_overview.jpg) | ![park](docs/images/phase2a/park_overview.jpg) |
+| From the drone | ![meadow](docs/images/phase2a/meadow_flight.jpg) | ![forest](docs/images/phase2a/forest_flight.jpg) | ![park](docs/images/phase2a/park_flight.jpg) |
+
+- **Seeded.** The same row gives byte-identical files, so any episode's
+  world can be rebuilt.
+- **Ground truth.** Each person's 3D box is written to `/ground_truth/people`
+  in the episode and to the sidecar.
+- **What is really simulated.** Time of day changes the sun's angle, colour
+  and strength. Fog is not rendered by this Gazebo, so `weather` only accepts
+  `clear`.
+- **Assets and licences** are listed in [docs/ASSETS.md](docs/ASSETS.md).
+
 ## What is verified, and what is not
 
 | Part | Status |
@@ -43,6 +81,8 @@ drone without a camera use `make sim SIM_MODEL=gz_x500` and
 | FiftyOne dataset + App | Tested; viewer checked by hand: 3D, camera, map and log tiles replay with no warnings |
 | `MavsdkDrone` against a running PX4 | Flown on PX4 SITL v1.18 + Gazebo Harmonic (`gz_x500`, headless), from a cold start. Not part of `make test`, which must run without a simulator |
 | Gazebo camera | Byte protocol and `GazeboCamera` tested without a simulator (stand-in bridge). Flown once on `gz_x500_mono_cam`, headless: 591 frames at 1280x960, checked in FiftyOne |
+| World generator | Tested without Gazebo (54 tests). Three pilot worlds rendered and flown on PX4; pictures above are from those runs |
+| Ground-truth boxes | In the file and the sidecar. Projected into frames with PX4's estimated pose they land 20 to 40 px off the people; exact image labels are Phase 2D |
 | Person detection | Not implemented. The `person_seen` event is still scripted from the drone's position; the default Gazebo world has no person in it |
 | Gazebo window (GUI) | Not tried: it needs XQuartz, which needs an admin password to install |
 
@@ -65,6 +105,13 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `sardrone/sim/mavsdk_drone.py` | `MavsdkDrone`: the PX4 implementation |
 | `sardrone/sim/record_flight.py` | The mission and the 10 Hz recorder |
 | `sardrone/sim/synthetic.py` | Fake 10 s circle episode |
+| `sardrone/sim/launch.py` | Starts Gazebo on a generated world and attaches PX4 |
+| `sardrone/worlds/matrix.py` | The variation matrix (YAML) and its validation |
+| `sardrone/worlds/layout.py` | Seeded placement of trees and people; ground-truth boxes |
+| `sardrone/worlds/sun.py` | Time of day to sun direction and light |
+| `sardrone/worlds/assets.py` | Model download, clothing recolouring, ground texture |
+| `sardrone/worlds/sdf.py` | Writes the world and drone model as SDF |
+| `sardrone/worlds/generate.py`, `preview.py` | CLI: build a world; render it without flying |
 | `sardrone/fo/load.py` | Builds the `sar-episodes` dataset and launches the App |
 | `data/episodes/` | `.mcap` + `.json` output (git-ignored) |
 
@@ -89,6 +136,7 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `/tf` | `foxglove.FrameTransform` | protobuf | `map → base_link` and `base_link → camera_front`, every sample |
 | `/events` | `foxglove.Log` | protobuf | `takeoff`, `waypoint_reached`, `person_seen`, `land` |
 | `/telemetry` | `sardrone.Telemetry` | JSON + JSON Schema | battery, flight mode, velocity (Z up) |
+| `/ground_truth/people` | `foxglove.SceneUpdate` | protobuf | one 3D box per person in `map`, 1 Hz; only for generated worlds |
 
 Every `foxglove.*` schema is protobuf, taken from the SDK's own
 `msgs.X.get_schema()`. Only the custom `/telemetry` type is JSON, which
@@ -188,9 +236,11 @@ in the checkout are `x500_mono_cam_down`, `x500_depth` and `x500_gimbal`.
   15 s, a bridge that exits, or no new frame for 3 s each raise an error
   instead of silently repeating a picture.
 - **Calibration from the simulator.** Field of view comes from Gazebo's
-  `camera_info`, and the mount position (12 cm forward, 3 cm left, 24 cm up)
+  `camera_info`, and the mount position (12 cm forward, 3 cm left)
   from the model's SDF; it is written into the `base_link → camera_front`
-  transform.
+  transform. (Correction: the first version recorded the mount as 24 cm
+  above the body. The SDF's number is from the model origin; the camera is
+  2 mm above the body. Episode `flight-0002` carries the old value.)
 
 Known limits:
 
@@ -245,6 +295,11 @@ Known limits:
   Python and defined a tiny binary protocol between them. The protocol is
   pure byte parsing, so it is unit-tested with in-memory streams and a
   stand-in bridge, with no simulator."
+- **Estimate vs truth:** "I projected the simulator's ground-truth boxes
+  into the images using the autopilot's pose, and they landed 20 to 40
+  pixels off. The autopilot's pose is an estimate from noisy GPS and
+  compass. For labels I need the simulator's true pose; for the mission I
+  only ever get the estimate. Knowing which one a number comes from matters."
 - **Testability:** "The mission is written against a five-method `Drone`
   interface. A fake drone with its own simulated clock lets the whole
   arm-takeoff-square-land sequence, including the timeout-and-land failure

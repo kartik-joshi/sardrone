@@ -15,7 +15,13 @@ CAMERA    ?= gazebo
 GZ_MODEL  := $(patsubst gz_%,%,$(SIM_MODEL))_0
 SHELL    := /bin/bash
 
-.PHONY: venv test synthetic sim record record-fake view clean
+# Phase 2A: generated worlds. ROW is an episode id from MATRIX.
+MATRIX    ?= configs/pilot.yaml
+ROW       ?= pilot-meadow
+WORLD_DIR := data/worlds/$(ROW)
+SIDE      ?= 30
+
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -65,6 +71,31 @@ record: $(VENV)/.dev $(VENV)/.fly
 
 # sardrone.fo.load sets VFF_MULTIMODAL=1 itself, before importing fiftyone;
 # it is repeated here so the requirement is visible.
+# ---- generated worlds (Phase 2A) --------------------------------------------
+
+# Download the people and tree models from Gazebo Fuel (about 45 MB, once).
+assets: $(VENV)/.dev
+	$(PY) -c "from sardrone.worlds.assets import fetch_all; fetch_all()"
+
+world: $(VENV)/.dev
+	$(PY) -m sardrone.worlds.generate --matrix $(MATRIX) --row $(ROW)
+
+worlds: $(VENV)/.dev
+	$(PY) -m sardrone.worlds.generate --matrix $(MATRIX) --all
+
+# Pictures of a world from fixed cameras, without flying (Gazebo only).
+preview: world
+	PX4_DIR=$(PX4_DIR) $(PY) -m sardrone.worlds.preview --world-dir $(WORLD_DIR)
+
+# Gazebo on the generated world + PX4 attached to the drone in it.
+sim-world: world
+	PX4_DIR=$(PX4_DIR) $(PY) -m sardrone.sim.launch --world-dir $(WORLD_DIR)
+
+# Run `make sim-world ROW=...` in another terminal first.
+record-world: $(VENV)/.dev $(VENV)/.fly
+	SARDRONE_GZ_PYTHON=$(PX4_DIR)/Tools/setup/macos/.pixi/envs/default/bin/python \
+	  $(PY) -m sardrone.sim.record_flight --camera gazebo --world-dir $(WORLD_DIR) --side $(SIDE)
+
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load
 

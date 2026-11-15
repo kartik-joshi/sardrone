@@ -76,7 +76,10 @@ class FlightRecorder:
         plan: FlightPlan | None = None,
         sleep=asyncio.sleep,
         start_wall_ns: int | None = None,
+        ground_truth_people: list[dict] | None = None,
     ):
+        self.ground_truth_people = ground_truth_people or []
+        self._samples = 0
         self.drone = drone
         self.episode = episode
         self.camera = camera
@@ -128,6 +131,12 @@ class FlightRecorder:
             flight_mode=state.flight_mode,
             velocity_ned_m_s=(state.v_north_m_s, state.v_east_m_s, state.v_down_m_s),
         )
+
+        # People do not move, but the answer key is repeated once a second
+        # so a viewer scrubbing to any time finds a recent copy.
+        if self.ground_truth_people and self._samples % max(1, round(self.plan.rate_hz)) == 0:
+            episode.log_ground_truth_people(wall_ns, self.ground_truth_people)
+        self._samples += 1
 
         self.state, self.now_ns = state, wall_ns
         person_in_view = self._person_in_view(state)
@@ -253,17 +262,27 @@ async def record_flight(
     sleep=asyncio.sleep,
     start_wall_ns: int | None = None,
     overwrite: bool = False,
+    ground_truth_people: list[dict] | None = None,
+    extra_sidecar: dict | None = None,
 ) -> EpisodeWriter:
     """Connect, fly, record. The episode file is always closed properly, and
     if the mission fails part-way we still try to land."""
     plan = plan or FlightPlan()
-    meta.people_placed = 0 if plan.person_north_east_m is None else 1
+    if ground_truth_people is not None:
+        meta.people_placed = len(ground_truth_people)
+    else:
+        meta.people_placed = 0 if plan.person_north_east_m is None else 1
     await drone.connect()
     try:
         await drone.wait_until_ready()
         camera = camera or SyntheticCamera()
         with EpisodeWriter(
-            path, meta, overwrite=overwrite, camera_mount_m=camera.mount_m
+            path,
+            meta,
+            overwrite=overwrite,
+            camera_mount_m=camera.mount_m,
+            camera_pitch_deg=camera.pitch_deg,
+            extra_sidecar=extra_sidecar,
         ) as episode:
             recorder = FlightRecorder(
                 drone,
@@ -272,6 +291,7 @@ async def record_flight(
                 plan=plan,
                 sleep=sleep,
                 start_wall_ns=start_wall_ns,
+                ground_truth_people=ground_truth_people,
             )
             try:
                 await recorder.run()
@@ -286,6 +306,47 @@ async def record_flight(
         return episode
     finally:
         await drone.close()
+
+
+def world_settings(world_dir: Path) -> tuple[dict, list[dict], dict]:
+    """Read a generated world's spec.json.
+
+    Returns the spec, the people as ground truth in the episode's `map`
+    frame, and the extra fields for the sidecar. Gazebo's world frame and
+    `map` share x and y (the drone takes off at the world origin); `map`
+    z = 0 is the drone's body on the ground, which sits a little above the
+    ground itself, so that height is subtracted.
+    """
+    import json
+
+    spec = json.loads((Path(world_dir) / "spec.json").read_text())
+    lift = spec["drone_body_height_m"]
+    people = []
+    for person in spec["people"]:
+        cx, cy, cz = person["box_centre"]
+        people.append(
+            {
+                "id": person["id"],
+                "pose": person["pose"],
+                "clothing": person["clothing"],
+                "occlusion": person["occlusion"],
+                "box_centre": [cx, cy, round(cz - lift, 3)],
+                "box_size": person["box_size"],
+                "box_quat_wxyz": person["box_quat_wxyz"],
+            }
+        )
+    extra = {
+        "world_id": spec["id"],
+        "seed": spec["seed"],
+        "area_m": spec["area_m"],
+        "altitude_m": spec["altitude_m"],
+        "occlusion": spec["occlusion"],
+        "sun_elevation_deg": spec["sun"]["elevation_deg"],
+        "sun_azimuth_deg": spec["sun"]["azimuth_deg"],
+        "detector": "none",  # nothing looks for people yet (Phase 2B adds an oracle)
+        "people": people,
+    }
+    return spec, people, extra
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -303,6 +364,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--gz-model", default="x500_mono_cam_0", help="Gazebo model name that carries the camera"
     )
+    parser.add_argument(
+        "--world-dir",
+        type=Path,
+        help="a generated world folder (data/worlds/<id>): sets camera, altitude, "
+        "labels and ground truth from its spec.json",
+    )
+    parser.add_argument("--side", type=float, help="side of the square to fly, metres")
     parser.add_argument("--world", default="default")
     parser.add_argument("--weather", default="clear")
     parser.add_argument("--time-of-day", default="noon")
@@ -331,6 +399,21 @@ def main(argv: list[str] | None = None) -> int:
         drone = MavsdkDrone(args.url)
         sleep = asyncio.sleep
 
+    plan = FlightPlan()
+    people, extra = None, None
+    gz_model, gz_world, mount, pitch = args.gz_model, args.world, None, None
+    if args.world_dir:
+        spec, people, extra = world_settings(args.world_dir)
+        meta.world, meta.weather, meta.time_of_day = spec["world"], spec["weather"], spec["time_of_day"]
+        plan.altitude_m = spec["altitude_m"]
+        plan.person_north_east_m = None  # real people come from the world, not a script
+        gz_model, gz_world = spec["gz_model"], spec["gz_world"]
+        mount, pitch = spec["camera_mount_m"], spec["camera_pitch_deg"]
+        if args.out is None:
+            path = next_episode_path(prefix=spec["id"])
+    if args.side:
+        plan.side_m = args.side
+
     camera = None  # record_flight falls back to SyntheticCamera
     if args.camera == "gazebo":
         if args.fake:
@@ -340,7 +423,9 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             # Open first: a missing camera should stop us BEFORE the drone arms.
-            camera = GazeboCamera(model=args.gz_model, world=args.world).open()
+            camera = GazeboCamera(
+                model=gz_model, world=gz_world, mount_m=mount, pitch_deg=pitch
+            ).open()
         except CameraError as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
@@ -349,7 +434,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         episode = asyncio.run(
             record_flight(
-                drone, path, meta, camera=camera, sleep=sleep, overwrite=args.overwrite
+                drone,
+                path,
+                meta,
+                camera=camera,
+                plan=plan,
+                sleep=sleep,
+                overwrite=args.overwrite,
+                ground_truth_people=people,
+                extra_sidecar=extra,
             )
         )
     except KeyboardInterrupt:

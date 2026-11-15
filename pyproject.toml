@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "foxglove-sdk>=0.31",  # writes MCAP with Foxglove protobuf schemas
     "pillow>=10",          # JPEG encoding for camera frames
+    "pyyaml>=6",           # the variation matrix
 ]
 
 [project.optional-dependencies]
