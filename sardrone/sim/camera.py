@@ -47,12 +47,14 @@ class SyntheticCamera:
     """Generates test images: a ground grid that scrolls as the drone moves,
     a frame counter, and an orange "person" marker when `person_visible`."""
 
-    def __init__(self, width: int = 640, height: int = 480, hfov_deg: float = 80.0):
+    def __init__(
+        self, width: int = 640, height: int = 480, hfov_deg: float = 80.0, pitch_deg: float = 0.0
+    ):
         self.width = width
         self.height = height
         self.hfov_deg = hfov_deg
         self.mount_m = (0.0, 0.0, 0.0)
-        self.pitch_deg = 0.0
+        self.pitch_deg = pitch_deg
         self.frame_index = 0
         self.person_visible = False
         self.caption = ""

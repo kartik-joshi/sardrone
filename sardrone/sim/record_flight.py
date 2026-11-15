@@ -308,6 +308,26 @@ async def record_flight(
         await drone.close()
 
 
+def people_in_map(spec: dict) -> list[dict]:
+    """A world spec's people as ground truth in the episode's `map` frame."""
+    lift = spec["drone_body_height_m"]
+    people = []
+    for person in spec["people"]:
+        cx, cy, cz = person["box_centre"]
+        people.append(
+            {
+                "id": person["id"],
+                "pose": person["pose"],
+                "clothing": person["clothing"],
+                "occlusion": person["occlusion"],
+                "box_centre": [cx, cy, round(cz - lift, 3)],
+                "box_size": list(person["box_size"]),
+                "box_quat_wxyz": list(person["box_quat_wxyz"]),
+            }
+        )
+    return people
+
+
 def world_settings(world_dir: Path) -> tuple[dict, list[dict], dict]:
     """Read a generated world's spec.json.
 
@@ -320,21 +340,7 @@ def world_settings(world_dir: Path) -> tuple[dict, list[dict], dict]:
     import json
 
     spec = json.loads((Path(world_dir) / "spec.json").read_text())
-    lift = spec["drone_body_height_m"]
-    people = []
-    for person in spec["people"]:
-        cx, cy, cz = person["box_centre"]
-        people.append(
-            {
-                "id": person["id"],
-                "pose": person["pose"],
-                "clothing": person["clothing"],
-                "occlusion": person["occlusion"],
-                "box_centre": [cx, cy, round(cz - lift, 3)],
-                "box_size": person["box_size"],
-                "box_quat_wxyz": person["box_quat_wxyz"],
-            }
-        )
+    people = people_in_map(spec)
     extra = {
         "world_id": spec["id"],
         "seed": spec["seed"],

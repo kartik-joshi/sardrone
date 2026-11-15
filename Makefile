@@ -21,7 +21,7 @@ ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -95,6 +95,17 @@ sim-world: world
 record-world: $(VENV)/.dev $(VENV)/.fly
 	SARDRONE_GZ_PYTHON=$(PX4_DIR)/Tools/setup/macos/.pixi/envs/default/bin/python \
 	  $(PY) -m sardrone.sim.record_flight --camera gazebo --world-dir $(WORLD_DIR) --side $(SIDE)
+
+# ---- search missions (Phase 2B) ----------------------------------------------
+
+# Lawnmower search with confirm / report / return home. Needs `make sim-world`.
+search: $(VENV)/.dev $(VENV)/.fly
+	SARDRONE_GZ_PYTHON=$(PX4_DIR)/Tools/setup/macos/.pixi/envs/default/bin/python \
+	  $(PY) -m sardrone.mission.search --world-dir $(WORLD_DIR)
+
+# The same mission with a fake drone: no simulator, finishes in seconds.
+search-fake: world
+	$(PY) -m sardrone.mission.search --world-dir $(WORLD_DIR) --fake --overwrite
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load

@@ -85,6 +85,7 @@ class FakeDrone:
 
     CRUISE_SPEED_M_S = 4.0
     BOOT_TIME_USEC = 65_000_000  # pretend PX4 booted 65 s before we connected
+    BATTERY_DRAIN_PERCENT_PER_S = 0.05  # tests raise this to force a low battery
 
     def __init__(self) -> None:
         self.time_usec = self.BOOT_TIME_USEC
@@ -141,7 +142,7 @@ class FakeDrone:
             self.velocity = [d / distance * self.CRUISE_SPEED_M_S for d in offset]
             self.position = [p + v * seconds for p, v in zip(self.position, self.velocity)]
         if self.armed:
-            self.battery_percent = max(0.0, self.battery_percent - 0.05 * seconds)
+            self.battery_percent = max(0.0, self.battery_percent - self.BATTERY_DRAIN_PERCENT_PER_S * seconds)
         if self.mode == "TAKEOFF" and distance <= max_step:
             self.mode = "HOLD"
         if self.mode == "LAND" and self.position[2] >= 0.0:

@@ -70,7 +70,25 @@ EVENT_TAKEOFF = "takeoff"
 EVENT_WAYPOINT_REACHED = "waypoint_reached"
 EVENT_PERSON_SEEN = "person_seen"
 EVENT_LAND = "land"
-KNOWN_EVENTS = (EVENT_TAKEOFF, EVENT_WAYPOINT_REACHED, EVENT_PERSON_SEEN, EVENT_LAND)
+# Search missions (Phase 2B).
+EVENT_STATE = "state"  # the mission state machine changed state
+EVENT_PERSON_CONFIRMED = "person_confirmed"
+EVENT_PERSON_REPORTED = "person_reported"
+EVENT_FALSE_ALARM = "false_alarm"
+EVENT_SEARCH_COMPLETE = "search_complete"
+EVENT_BATTERY_LOW = "battery_low"
+KNOWN_EVENTS = (
+    EVENT_TAKEOFF,
+    EVENT_WAYPOINT_REACHED,
+    EVENT_PERSON_SEEN,
+    EVENT_LAND,
+    EVENT_STATE,
+    EVENT_PERSON_CONFIRMED,
+    EVENT_PERSON_REPORTED,
+    EVENT_FALSE_ALARM,
+    EVENT_SEARCH_COMPLETE,
+    EVENT_BATTERY_LOW,
+)
 
 # /telemetry has no matching Foxglove schema, so it is our own message type.
 # Custom types MAY use JSON (with a JSON Schema); only foxglove.* types must

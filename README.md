@@ -72,6 +72,51 @@ and the drone model with its camera pitched 45 degrees down.
   `clear`.
 - **Assets and licences** are listed in [docs/ASSETS.md](docs/ASSETS.md).
 
+## Search missions (Phase 2B)
+
+```bash
+make search-fake ROW=pilot-meadow   # the whole mission with a fake drone, about 2 s
+```
+
+```bash
+make sim-world ROW=pilot-meadow     # then, in another terminal:
+```
+
+```bash
+make search ROW=pilot-meadow
+```
+
+The drone sweeps the search area in lawnmower lanes. On a sighting it
+descends, circles the spot with the camera on it, reports the person's
+position, climbs back and continues. It flies home when the area is covered
+or the battery drops to 30 %.
+
+```
+TAKEOFF -> SEARCH -> CONFIRM -> REPORT -> RESUME -> SEARCH ... -> RTL -> LAND -> DONE
+              |          \-> RESUME (not confirmed)
+              \-> RTL (battery low, or area covered)
+```
+
+Lane spacing comes from the camera, not from a guess:
+
+| Altitude | Image centre looks ahead | Swath | Person in image centre | 120 m square needs |
+| --- | --- | --- | --- | --- |
+| 15 m | 15 m | 50 m | 43 px | 4 lanes |
+| 25 m | 25 m | 84 m | 26 px | 2 lanes |
+| 40 m | 40 m | 103 m (resolution-limited) | 16 px | 2 lanes |
+
+One real flight on `pilot-meadow` (PX4 SITL, 216 s): 3 of 3 people sighted,
+confirmed and reported, with 17 state transitions on the event timeline.
+Below, a frame from a confirmation orbit; the person is near the centre.
+
+![confirmation orbit](docs/images/phase2b_confirm.jpg)
+
+**Sightings come from an oracle, not a detector.** Until Phase 3 there is no
+model, so `sardrone.mission.oracle` reads the simulator's ground truth and
+the sidecar says `detector: oracle`. This shows the flying logic works. It
+does not show that people can be found in images, and the reported position
+errors (0.2 to 0.9 m) are optimistic for the reason given in the dev log.
+
 ## What is verified, and what is not
 
 | Part | Status |
@@ -83,6 +128,8 @@ and the drone model with its camera pitched 45 degrees down.
 | Gazebo camera | Byte protocol and `GazeboCamera` tested without a simulator (stand-in bridge). Flown once on `gz_x500_mono_cam`, headless: 591 frames at 1280x960, checked in FiftyOne |
 | World generator | Tested without Gazebo (54 tests). Three pilot worlds rendered and flown on PX4; pictures above are from those runs |
 | Ground-truth boxes | In the file and the sidecar. Projected into frames with PX4's estimated pose they land 20 to 40 px off the people; exact image labels are Phase 2D |
+| Coverage planner | Tested: every sample point of rectangles, triangles, tilted and L-shaped areas is covered, at four lane headings |
+| Search state machine | Tested with `FakeDrone`: find-all, nobody seen, false alarm, low battery, illegal transition. One real PX4 flight found 3 of 3 with the oracle. Low battery was not tried on PX4 |
 | Person detection | Not implemented. The `person_seen` event is still scripted from the drone's position; the default Gazebo world has no person in it |
 | Gazebo window (GUI) | Not tried: it needs XQuartz, which needs an admin password to install |
 
@@ -112,6 +159,11 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `sardrone/worlds/assets.py` | Model download, clothing recolouring, ground texture |
 | `sardrone/worlds/sdf.py` | Writes the world and drone model as SDF |
 | `sardrone/worlds/generate.py`, `preview.py` | CLI: build a world; render it without flying |
+| `sardrone/mission/footprint.py` | What the tilted camera sees: swath, slant range, person size in pixels |
+| `sardrone/mission/coverage.py` | Lawnmower lanes over a search polygon |
+| `sardrone/mission/projection.py` | Map point to pixel; pixel to ground |
+| `sardrone/mission/oracle.py` | Stand-in detector that reads ground truth |
+| `sardrone/mission/search.py` | The search state machine and its CLI |
 | `sardrone/fo/load.py` | Builds the `sar-episodes` dataset and launches the App |
 | `data/episodes/` | `.mcap` + `.json` output (git-ignored) |
 
@@ -134,7 +186,7 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `/gps` | `foxglove.LocationFix` | protobuf | latitude, longitude, altitude |
 | `/pose` | `foxglove.PoseInFrame` | protobuf | drone in `map`, Z up |
 | `/tf` | `foxglove.FrameTransform` | protobuf | `map → base_link` and `base_link → camera_front`, every sample |
-| `/events` | `foxglove.Log` | protobuf | `takeoff`, `waypoint_reached`, `person_seen`, `land` |
+| `/events` | `foxglove.Log` | protobuf | `takeoff`, `waypoint_reached`, `person_seen`, `land`; search missions add `state`, `person_confirmed`, `person_reported`, `false_alarm`, `search_complete`, `battery_low` |
 | `/telemetry` | `sardrone.Telemetry` | JSON + JSON Schema | battery, flight mode, velocity (Z up) |
 | `/ground_truth/people` | `foxglove.SceneUpdate` | protobuf | one 3D box per person in `map`, 1 Hz; only for generated worlds |
 
@@ -300,6 +352,15 @@ Known limits:
   pixels off. The autopilot's pose is an estimate from noisy GPS and
   compass. For labels I need the simulator's true pose; for the mission I
   only ever get the estimate. Knowing which one a number comes from matters."
+- **Coverage:** "My first lawnmower planner passed on a square and failed
+  on a triangle: it cut each lane where its centre line left the area, so
+  the slanted corners were never seen. I only found that because the test
+  checks coverage on a grid of points for several shapes, instead of
+  checking that the waypoints look right."
+- **Altitude trade-off:** "Flying higher halves the lanes but shrinks a
+  person from 43 to 16 pixels. I compute the swath from the camera model
+  and cap it where a person drops below a minimum pixel size, so the
+  planner refuses an altitude the detector could not use."
 - **Testability:** "The mission is written against a five-method `Drone`
   interface. A fake drone with its own simulated clock lets the whole
   arm-takeoff-square-land sequence, including the timeout-and-land failure
