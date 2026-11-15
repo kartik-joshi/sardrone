@@ -286,7 +286,7 @@ is what the overlays are for.
   errors here would shift every label by a pixel.
 - **Empty slivers.** At the image border the sensor sometimes reports a box
   of zero width. Boxes under 1 px are dropped when recording, and boxes
-  under 4 px on the longer side when extracting (40 dropped in total).
+  under 4 px on the longer side when extracting (39 dropped in total).
 - **I overwrote a test file.** My new `tests/test_frames.py` replaced the
   Week 1 file of the same name (the NED/ENU conversion tests). The suite
   still passed, with 20 fewer tests, and only the count gave it away.
