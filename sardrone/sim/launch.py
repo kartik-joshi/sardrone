@@ -121,6 +121,12 @@ class Simulation:
 
     def start(self) -> "Simulation":
         self.log_dir.mkdir(exist_ok=True)
+        # A simulator left over from a killed run would be silently reused
+        # by PX4, with the WRONG world. Refuse instead of recording that.
+        if self._clock_topic() in self._topics():
+            raise SimulationError(
+                "a Gazebo simulator is already running. Stop it first: pkill -f 'gz sim'"
+            )
         try:
             gz_log = self.log_dir / "gazebo.log"
             out = open(gz_log, "w")
@@ -147,18 +153,23 @@ class Simulation:
             raise
         return self
 
+    def _clock_topic(self) -> str:
+        return f"/world/{self.spec['gz_world']}/clock"
+
+    def _topics(self) -> list[str]:
+        script = f'source "{_build_dir() / "gz_env.sh"}"; export GZ_IP=127.0.0.1; gz topic -l'
+        listing = subprocess.run(
+            ["/bin/bash", "-c", script], capture_output=True, text=True, timeout=30
+        )
+        return listing.stdout.split()
+
     def _wait_for_world(self, gz_log: Path, timeout_s: float = 60.0) -> None:
         """Gazebo is ready when the world's clock topic exists."""
-        topic = f"/world/{self.spec['gz_world']}/clock"
-        script = f'source "{_build_dir() / "gz_env.sh"}"; export GZ_IP=127.0.0.1; gz topic -l'
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             if self._gazebo.poll() is not None:
                 raise SimulationError(f"Gazebo exited early; see {gz_log}")
-            listing = subprocess.run(
-                ["/bin/bash", "-c", script], capture_output=True, text=True, timeout=20
-            ).stdout
-            if topic in listing.split():
+            if self._clock_topic() in self._topics():
                 return
             time.sleep(1.0)
         raise SimulationError(f"Gazebo world was not ready after {timeout_s:g} s; see {gz_log}")

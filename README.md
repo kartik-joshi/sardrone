@@ -117,6 +117,25 @@ the sidecar says `detector: oracle`. This shows the flying logic works. It
 does not show that people can be found in images, and the reported position
 errors (0.2 to 0.9 m) are optimistic for the reason given in the dev log.
 
+## Batches (Phase 2C)
+
+```bash
+make batch MATRIX=configs/pilot10.yaml        # unattended; starts and stops the simulator
+```
+
+```bash
+make batch-fake MATRIX=configs/pilot10.yaml   # same bookkeeping, fake drone, seconds
+```
+
+For each row the batch generates the world, flies the search and appends a
+line to `data/episodes/<matrix>.manifest.csv` with the outcome, the seed,
+the matrix row and the git commit. Stop it and run it again: finished
+episodes are skipped.
+
+The ten-episode pilot ran unattended in 43.8 minutes: 10 of 10 completed,
+30 of 30 people reported (by the oracle), 22,881 frames, 1.89 GB. Its
+manifest is in [docs/results/pilot10.manifest.csv](docs/results/pilot10.manifest.csv).
+
 ## What is verified, and what is not
 
 | Part | Status |
@@ -130,6 +149,7 @@ errors (0.2 to 0.9 m) are optimistic for the reason given in the dev log.
 | Ground-truth boxes | In the file and the sidecar. Projected into frames with PX4's estimated pose they land 20 to 40 px off the people; exact image labels are Phase 2D |
 | Coverage planner | Tested: every sample point of rectangles, triangles, tilted and L-shaped areas is covered, at four lane headings |
 | Search state machine | Tested with `FakeDrone`: find-all, nobody seen, false alarm, low battery, illegal transition. One real PX4 flight found 3 of 3 with the oracle. Low battery was not tried on PX4 |
+| Batch runner | Bookkeeping tested with a stand-in runner (resume, retry, timeout, disk limit). One real batch of 10 completed with no failures, so retry and timeout have not been exercised against the simulator |
 | Person detection | Not implemented. The `person_seen` event is still scripted from the drone's position; the default Gazebo world has no person in it |
 | Gazebo window (GUI) | Not tried: it needs XQuartz, which needs an admin password to install |
 
@@ -164,6 +184,7 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `sardrone/mission/projection.py` | Map point to pixel; pixel to ground |
 | `sardrone/mission/oracle.py` | Stand-in detector that reads ground truth |
 | `sardrone/mission/search.py` | The search state machine and its CLI |
+| `sardrone/batch.py` | Runs a whole matrix unattended; manifest and resume |
 | `sardrone/fo/load.py` | Builds the `sar-episodes` dataset and launches the App |
 | `data/episodes/` | `.mcap` + `.json` output (git-ignored) |
 
@@ -361,6 +382,10 @@ Known limits:
   person from 43 to 16 pixels. I compute the swath from the camera model
   and cap it where a person drops below a minimum pixel size, so the
   planner refuses an altitude the detector could not use."
+- **Provenance:** "Every episode has a manifest line with its seed, its
+  full config and the git commit, and the batch refuses nothing but records
+  whether the tree was dirty. When a number looks odd three weeks later I
+  can regenerate that exact world and rerun that exact code."
 - **Testability:** "The mission is written against a five-method `Drone`
   interface. A fake drone with its own simulated clock lets the whole
   arm-takeoff-square-land sequence, including the timeout-and-land failure

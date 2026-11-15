@@ -143,7 +143,9 @@ def run_episode(
 
     log_dir = paths.folder / "logs"
     log_dir.mkdir(exist_ok=True)
-    env = dict(os.environ, SARDRONE_GZ_PYTHON=str(gz_python()))
+    # PYTHONUNBUFFERED: the episode's log is written as it happens, so a
+    # hanging episode can be watched (the first batch showed an empty log).
+    env = dict(os.environ, SARDRONE_GZ_PYTHON=str(gz_python()), PYTHONUNBUFFERED="1")
 
     def fly() -> EpisodeResult:
         with open(log_dir / "search.log", "w") as log:
@@ -215,7 +217,7 @@ def run_batch(
     max_attempts: int = 2,
     min_free_gb: float = 3.0,
     free_gb: Callable[[], float] | None = None,
-    log: Callable[[str], None] = print,
+    log: Callable[[str], None] = lambda message: print(message, flush=True),
 ) -> dict:
     """Run every row that is not done yet. Returns counts per outcome.
 

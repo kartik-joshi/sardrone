@@ -151,3 +151,70 @@ One entry per phase: what was done, what broke, what was learned.
 - No obstacle avoidance: the mission relies on flying above the tallest tree.
 - A person never confirmed is retried after 30 s, forever; there is no cap.
 - Battery low was tested with the fake drone only.
+
+## Phase 2C - Batch runner (2026-11-15)
+
+### Done
+
+- `sardrone/batch.py`: for each matrix row, generate the world, start
+  Gazebo and PX4, fly the search in its own process with a 15-minute limit,
+  stop the simulator, append one manifest line.
+- Manifest (CSV): episode id, attempt, outcome, success, people placed and
+  found, detector, world, seed, flight and wall time, size, commit, dirty
+  flag, start time, file, error, and the full matrix row as JSON.
+- Resume: an episode counts as done when the manifest says `completed` AND
+  its files exist. A failed episode is retried once.
+- Matrix files can hold a seeded `sample` block; values are dealt like
+  cards so each option appears about equally often.
+- The FiftyOne loader copies the new sidecar fields.
+
+### Result: `configs/pilot10.yaml`, PX4 SITL, oracle detector, commit ddc06b4
+
+| | |
+| --- | --- |
+| Episodes | 10 of 10 completed, first attempt, no failures or timeouts |
+| Unattended wall time | 43.8 min |
+| Flight time recorded | 2308 s (38.5 min), 22,881 camera frames |
+| People | 30 placed, 30 sighted, confirmed and reported |
+| Mean / max reported position error | 0.43 m / 0.87 m (optimistic, see Phase 2B) |
+| Disk | 1.89 GB (115 to 370 MB per episode) |
+| Mix | 4 forest edge, 3 meadow, 3 park; 4 noon, 3 golden hour, 3 dusk; 15 m and 25 m; 4 with occlusion |
+
+The manifest is saved as `docs/results/pilot10.manifest.csv`. Running the
+same command again skipped all ten. In FiftyOne the ten samples filter by
+world, time of day, altitude and detector.
+
+### What broke, and what was learned
+
+- **Do not edit code while a batch runs.** Each episode is a new process
+  that imports the code from disk, but the commit hash is read once at the
+  start. An edit mid-batch would give later episodes different code under
+  the same recorded commit. I committed the runner first, then ran, so every
+  line says `ddc06b4`, `dirty: no`.
+- **Logs were empty while episodes ran.** Output written to a file is
+  buffered. The batch now sets `PYTHONUNBUFFERED` for episodes and flushes
+  its own progress lines. (Fixed after this run.)
+- **A leftover simulator would be reused with the wrong world.** PX4
+  attaches to any running Gazebo. If a batch is killed hard, Gazebo
+  survives. The launcher now refuses to start when a simulator is already
+  running; checked by starting a second one on purpose.
+- **Sampling needed balance.** Independent random picks over 10 rows can
+  give 7 meadows. Dealing values from a shuffled deck gives 3 or 4 of each.
+- **JPEG quality is not the lever for size.** Re-encoding at quality 75
+  saved under 10 %; the fine grain of the ground texture dominates. Kept at
+  85 and full resolution.
+
+### How far to trust this
+
+- 30 of 30 found is the ORACLE's result. It ignores occlusion, so the four
+  occluded episodes say nothing about seeing people under trees.
+- Retry, timeout and disk-full handling are covered by tests with a
+  stand-in runner. None of them happened in the real run, so none is proven
+  against the simulator. Killing the batch mid-episode was not tried.
+- Episodes ran 144 to 371 s. Three exceed the plan's 2 to 4 minutes; five
+  people at 25 s per confirmation add up.
+
+### Projection for the v1 dataset (75 episodes)
+
+At this run's averages (231 s, 189 MB, 263 s wall per episode): about
+14 GB and 5.5 hours. 30 GB were free before this batch.
