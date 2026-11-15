@@ -136,6 +136,32 @@ The ten-episode pilot ran unattended in 43.8 minutes: 10 of 10 completed,
 30 of 30 people reported (by the oracle), 22,881 frames, 1.89 GB. Its
 manifest is in [docs/results/pilot10.manifest.csv](docs/results/pilot10.manifest.csv).
 
+## Labelled frames (Phase 2D)
+
+```bash
+make frames     # pictures at 2 per second from every episode -> FiftyOne "sar-frames"
+```
+
+```bash
+make overlay    # 20 random frames with their boxes drawn -> data/overlays/
+```
+
+Labels are free in simulation, if they are exact. The drone carries a second
+sensor in the same place as its camera: Gazebo's bounding-box camera, which
+reports a pixel rectangle around the visible part of every person. Picture
+and boxes are rendered at the same instant, so a person hidden by a tree
+simply has no box.
+
+The pilot batch gives 4,678 frames with 6,355 person boxes (median 30 px on
+the longer side). Twenty random overlays:
+
+![overlays](docs/images/phase2d_overlays.jpg)
+
+Each frame also stores how many people geometry says should be in view. In
+open terrain that matches the label count in 92.6 % of frames; under trees
+only 63.3 %, because the labels (correctly) leave out people the canopy
+hides.
+
 ## What is verified, and what is not
 
 | Part | Status |
@@ -150,6 +176,7 @@ manifest is in [docs/results/pilot10.manifest.csv](docs/results/pilot10.manifest
 | Coverage planner | Tested: every sample point of rectangles, triangles, tilted and L-shaped areas is covered, at four lane headings |
 | Search state machine | Tested with `FakeDrone`: find-all, nobody seen, false alarm, low battery, illegal transition. One real PX4 flight found 3 of 3 with the oracle. Low battery was not tried on PX4 |
 | Batch runner | Bookkeeping tested with a stand-in runner (resume, retry, timeout, disk limit). One real batch of 10 completed with no failures, so retry and timeout have not been exercised against the simulator |
+| Image labels | From Gazebo's bounding-box sensor. Reader, dataset and overlay code tested; 20 random overlays from the real batch checked by eye; box counts cross-checked against geometry on all 4,678 frames |
 | Person detection | Not implemented. The `person_seen` event is still scripted from the drone's position; the default Gazebo world has no person in it |
 | Gazebo window (GUI) | Not tried: it needs XQuartz, which needs an admin password to install |
 
@@ -185,6 +212,9 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `sardrone/mission/oracle.py` | Stand-in detector that reads ground truth |
 | `sardrone/mission/search.py` | The search state machine and its CLI |
 | `sardrone/batch.py` | Runs a whole matrix unattended; manifest and resume |
+| `sardrone/mcap/reader.py` | Reads labelled frames back out of an episode |
+| `sardrone/fo/frames.py` | Builds the `sar-frames` image dataset with ground-truth Detections |
+| `sardrone/fo/overlay.py` | Random frames with boxes drawn, for a human check |
 | `sardrone/fo/load.py` | Builds the `sar-episodes` dataset and launches the App |
 | `data/episodes/` | `.mcap` + `.json` output (git-ignored) |
 
@@ -209,6 +239,7 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `/tf` | `foxglove.FrameTransform` | protobuf | `map → base_link` and `base_link → camera_front`, every sample |
 | `/events` | `foxglove.Log` | protobuf | `takeoff`, `waypoint_reached`, `person_seen`, `land`; search missions add `state`, `person_confirmed`, `person_reported`, `false_alarm`, `search_complete`, `battery_low` |
 | `/telemetry` | `sardrone.Telemetry` | JSON + JSON Schema | battery, flight mode, velocity (Z up) |
+| `/ground_truth/boxes` | `foxglove.ImageAnnotations` | protobuf | exact label boxes for the camera frame at the same timestamp; only with the Gazebo camera |
 | `/ground_truth/people` | `foxglove.SceneUpdate` | protobuf | one 3D box per person in `map`, 1 Hz; only for generated worlds |
 
 Every `foxglove.*` schema is protobuf, taken from the SDK's own
@@ -386,6 +417,13 @@ Known limits:
   full config and the git commit, and the batch refuses nothing but records
   whether the tree was dirty. When a number looks odd three weeks later I
   can regenerate that exact world and rerun that exact code."
+- **Labels:** "My first plan was to project 3D boxes into the image with
+  the drone's pose. I measured that and it was 20 to 40 pixels off. So I
+  put the simulator's bounding-box sensor next to the camera: labels are
+  rendered from the same view at the same instant, and occlusion is handled
+  because only visible pixels count. Then I cross-checked the counts against
+  geometry and looked at random overlays, because exact-looking labels that
+  nobody has looked at are the classic way to train on garbage."
 - **Testability:** "The mission is written against a five-method `Drone`
   interface. A fake drone with its own simulated clock lets the whole
   arm-takeoff-square-land sequence, including the timeout-and-land failure

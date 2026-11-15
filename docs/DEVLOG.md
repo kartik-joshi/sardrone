@@ -218,3 +218,89 @@ world, time of day, altitude and detector.
 
 At this run's averages (231 s, 189 MB, 263 s wall per episode): about
 14 GB and 5.5 hours. 30 GB were free before this batch.
+
+## Phase 2D - Frames and ground-truth labels (2026-11-15)
+
+### Done
+
+- **Labels come from Gazebo's bounding-box camera**, the plan's first
+  choice. It works headless on this Mac. The drone's camera link carries
+  two sensors with the same lens and rate: the colour camera, and the
+  bounding-box camera, which reports a pixel rectangle around the VISIBLE
+  part of every labelled object. Each person model has its own label number.
+- The image bridge forwards a picture only together with the boxes Gazebo
+  rendered at the same simulation time.
+- `/ground_truth/boxes` (foxglove.ImageAnnotations) is written with every
+  camera frame. An empty message means "checked, nobody in view".
+- `sardrone/mcap/reader.py` reads labelled frames back at 2 Hz.
+- `make frames` builds the FiftyOne image dataset `sar-frames`; each sample
+  has `ground_truth` Detections and links to `episode_id` and `timestamp_ns`.
+- `make overlay` saves 20 seeded random frames with boxes and 4x crops.
+
+### Result (pilot batch re-recorded at commit 56c0763, plus one earlier search)
+
+| | |
+| --- | --- |
+| Batch | 10 of 10 completed, 44.5 min, 1.87 GB, 30 of 30 reported (oracle) |
+| `sar-frames` | 4,678 frames from 11 episodes, 6,355 boxes, 403 MB of JPEGs |
+| People per frame | 0: 1603, 1: 1144, 2: 1073, 3: 417, 4: 391, 5: 50 |
+| Box size (longer side) | median 30 px, 5th percentile 11 px, 95th 62 px, range 4 to 165 |
+| Truncated at the image border | 245 of 6,355 |
+| By pose | standing 2898, sitting 2252, lying 1205 |
+| By world | forest edge 1714, park 1623, meadow 1341 frames |
+| By time of day | noon 1820, dusk 1461, golden hour 1397 frames |
+
+### The count check ("do box counts match the people in view?")
+
+Each frame also gets `expected_by_geometry`: how many people's 3D centres
+project inside the image, from PX4's pose, ignoring trees. That is a
+second, independent way to count.
+
+| Episodes | Frames | Same count | Labels fewer | Labels more |
+| --- | --- | --- | --- | --- |
+| occlusion `none` | 3146 | 92.6 % | 3.2 % | 4.2 % |
+| occlusion `partial` | 1532 | 63.3 % | 34.7 % | 2.0 % |
+| all | 4678 | 83.0 % | 13.5 % | 3.5 % |
+
+They are not meant to be equal. Where people stand under trees, a third of
+the frames have FEWER labels than geometry expects: the canopy hides them,
+and the sensor only boxes what is visible. That is the behaviour wanted
+from labels. In the open the two agree in 92.6 % of frames; the rest are
+people at the image border, where a visible arm gets a box while the body
+centre is outside (or the reverse), plus PX4's pose error. No frame has more
+boxes than people placed.
+
+The 20 overlays (`docs/images/phase2d_overlays.jpg`) were looked at by me:
+every box is on a person, in all three world types and all three times of
+day, and frames without people have no boxes. Kartik should look too; that
+is what the overlays are for.
+
+### What broke, and what was learned
+
+- **The first idea would not have worked.** Phase 2A showed that
+  projecting 3D boxes with PX4's pose misses by 20 to 40 px. The sensor
+  renders the labels from the same view as the picture, so pose error does
+  not enter at all, and occlusion comes for free.
+- **Gazebo gives the first and last pixel of a box, both inside it.**
+  Adding 1 to the last pixel gives edges, so width = x1 - x0. Off-by-one
+  errors here would shift every label by a pixel.
+- **Empty slivers.** At the image border the sensor sometimes reports a box
+  of zero width. Boxes under 1 px are dropped when recording, and boxes
+  under 4 px on the longer side when extracting (40 dropped in total).
+- **I overwrote a test file.** My new `tests/test_frames.py` replaced the
+  Week 1 file of the same name (the NED/ENU conversion tests). The suite
+  still passed, with 20 fewer tests, and only the count gave it away.
+  Restored in the next commit; the new tests are in
+  `tests/test_labelled_frames.py`.
+- **The whole pilot had to be recorded again** (45 min) because labels are
+  captured at flight time. The old unlabelled episodes were deleted.
+
+### How far to trust this
+
+- The labels are exact for THIS renderer. They say nothing about realism.
+- "Visible" is decided per pixel by Gazebo; a person with only a hand
+  showing still gets a (small) box. No minimum visible fraction is applied.
+- 31 % of the frames are from confirmation orbits around one person, so
+  they are near-duplicates. Phase 2E deals with that.
+- All frames come from flights where the oracle steered the drone towards
+  people, so people are over-represented compared with a blind search.
