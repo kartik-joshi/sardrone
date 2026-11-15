@@ -8,12 +8,11 @@ saves 20 frames with their boxes drawn, plus a zoomed crop of each box.
 The same seed always picks the same frames.
 """
 
-import os
 from pathlib import Path
 
+from sardrone.fo import env  # noqa: F401  (must come before `import fiftyone`)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-os.environ.setdefault("FIFTYONE_DATABASE_DIR", str(PROJECT_ROOT / ".fiftyone" / "db"))
-os.environ.setdefault("FIFTYONE_DO_NOT_TRACK", "true")
 
 import argparse  # noqa: E402
 

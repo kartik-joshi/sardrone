@@ -16,3 +16,4 @@ runs/
 .env
 data/frames/
 data/overlays/
+.cache/

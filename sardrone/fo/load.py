@@ -10,22 +10,15 @@ shared timeline. The JSON sidecar becomes ordinary sample fields, so episodes
 can be filtered in the sidebar (weather == "fog", success == False, ...).
 """
 
-import os
 from pathlib import Path
+
+from sardrone.fo import env  # noqa: F401  (must come before `import fiftyone`)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# These must be set BEFORE `import fiftyone`:
-# * VFF_MULTIMODAL=1 switches on the multimodal viewer (a feature flag that
-#   fiftyone/server/routes reads at import time).
-# * The database is kept inside this project instead of ~/.fiftyone. Override
-#   by exporting your own. (Launching the App still creates two tiny files,
-#   ~/.fiftyone/var/uid and welcome.json; FiftyOne hard-codes that location.)
-# * Usage analytics are switched off.
-# setdefault() means anything you export yourself wins.
-os.environ.setdefault("VFF_MULTIMODAL", "1")
-os.environ.setdefault("FIFTYONE_DATABASE_DIR", str(PROJECT_ROOT / ".fiftyone" / "db"))
-os.environ.setdefault("FIFTYONE_DO_NOT_TRACK", "true")
+# sardrone.fo.env (imported above) switches on the multimodal viewer and keeps
+# the database inside this project. Launching the App still creates two tiny
+# files, ~/.fiftyone/var/uid and welcome.json; FiftyOne hard-codes that place.
 
 import argparse  # noqa: E402
 import json  # noqa: E402

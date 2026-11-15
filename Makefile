@@ -21,7 +21,7 @@ ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -40,6 +40,11 @@ $(VENV)/.fly: pyproject.toml | $(VENV)/bin/python
 # Large download (about 900 MB installed). Only `make view` triggers it.
 $(VENV)/.view: pyproject.toml | $(VENV)/bin/python
 	$(PIP) -e ".[view]"
+	touch $@
+
+# PyTorch and friends (about 1 GB). Only the Phase 2E targets trigger it.
+$(VENV)/.ml: pyproject.toml | $(VENV)/bin/python
+	$(PIP) -e ".[ml]"
 	touch $@
 
 venv: $(VENV)/.dev
@@ -126,6 +131,16 @@ frames: $(VENV)/.dev $(VENV)/.view
 # 20 random frames with their label boxes drawn, for a human check.
 overlay: $(VENV)/.dev $(VENV)/.view
 	$(PY) -m sardrone.fo.overlay
+
+# ---- curate, embed, auto-label (Phase 2E) ------------------------------------
+
+# Embeddings, 2D map, near-duplicates, train/val split, saved views.
+curate: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
+	$(PY) -m sardrone.fo.curate
+
+# Open-vocabulary auto-labels, scored against ground truth (about 35 min).
+autolabel: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
+	$(PY) -m sardrone.fo.autolabel
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load

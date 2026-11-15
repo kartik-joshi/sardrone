@@ -9,12 +9,11 @@ FiftyOne `Detections`. Each picture keeps a link back to its episode and
 timestamp, so any training image can be traced to the moment it came from.
 """
 
-import os
 from pathlib import Path
 
+from sardrone.fo import env  # noqa: F401  (must come before `import fiftyone`)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-os.environ.setdefault("FIFTYONE_DATABASE_DIR", str(PROJECT_ROOT / ".fiftyone" / "db"))
-os.environ.setdefault("FIFTYONE_DO_NOT_TRACK", "true")
 
 import argparse  # noqa: E402
 import json  # noqa: E402

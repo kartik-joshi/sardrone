@@ -23,6 +23,8 @@ dev = ["pytest>=8"]
 fly = ["mavsdk>=4.2,<5"]
 # The viewer. Large (about 900 MB installed, bundles MongoDB).
 view = ["fiftyone[multimodal]>=1.19"]
+# Embeddings and the open-vocabulary auto-labeler (Phase 2E). About 1 GB.
+ml = ["torch>=2.4", "torchvision>=0.19", "transformers>=4.45", "umap-learn>=0.5"]
 
 [tool.setuptools.packages.find]
 include = ["sardrone*"]
