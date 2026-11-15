@@ -21,7 +21,7 @@ ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -106,6 +106,16 @@ search: $(VENV)/.dev $(VENV)/.fly
 # The same mission with a fake drone: no simulator, finishes in seconds.
 search-fake: world
 	$(PY) -m sardrone.mission.search --world-dir $(WORLD_DIR) --fake --overwrite
+
+# ---- batches (Phase 2C) ------------------------------------------------------
+
+# Every row of MATRIX, unattended. Safe to stop and run again: finished
+# episodes are skipped. Starts and stops the simulator itself.
+batch: $(VENV)/.dev $(VENV)/.fly
+	PX4_DIR=$(PX4_DIR) $(PY) -m sardrone.batch --matrix $(MATRIX)
+
+batch-fake: $(VENV)/.dev
+	$(PY) -m sardrone.batch --matrix $(MATRIX) --fake
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load

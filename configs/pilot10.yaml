@@ -1,0 +1,15 @@
+# Phase 2C: ten varied episodes to prove the batch pipeline end to end.
+# 60 m areas keep each search to roughly 3 to 5 minutes.
+defaults:
+  area_m: 60
+  camera_pitch_deg: 45
+
+sample:
+  prefix: pilot
+  count: 10
+  seed: 7
+  world: [meadow, forest_edge, park]
+  people: [1, 2, 3, 4, 5]
+  occlusion: [none, none, partial]
+  time_of_day: [noon, golden_hour, dusk]
+  altitude_m: [15, 25]

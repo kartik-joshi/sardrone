@@ -47,6 +47,15 @@ SIDECAR_FIELDS = (
     "people_found",
     "success",
     "duration_s",
+    # Generated worlds and search missions (Phase 2A onwards).
+    "world_id",
+    "seed",
+    "area_m",
+    "altitude_m",
+    "occlusion",
+    "camera_pitch_deg",
+    "sun_elevation_deg",
+    "detector",
 )
 
 
@@ -66,6 +75,16 @@ def sidecar_to_fields(sidecar: dict) -> dict:
     fields["num_images"] = int(counts.get("/camera/front", 0))
     fields["num_messages"] = int(sum(counts.values()))
     fields["num_events"] = int(sum(sidecar.get("event_counts", {}).values()))
+    for key in ("area_m", "altitude_m", "camera_pitch_deg", "sun_elevation_deg"):
+        if key in fields:
+            fields[key] = float(fields[key])
+    if "reports" in sidecar:
+        fields["num_reports"] = len(sidecar["reports"])
+        errors = [r["error_m"] for r in sidecar["reports"] if "error_m" in r]
+        if errors:
+            fields["mean_report_error_m"] = float(sum(errors) / len(errors))
+    if "search" in sidecar and sidecar["search"]:
+        fields["lanes"] = int(sidecar["search"]["lanes"])
     return fields
 
 

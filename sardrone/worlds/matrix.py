@@ -74,11 +74,60 @@ def row_from_dict(data: dict) -> VariationRow:
     return VariationRow(**data)
 
 
+def sample_rows(block: dict, defaults: dict | None = None) -> list[VariationRow]:
+    """Expand a `sample` block into seeded rows.
+
+        sample:
+          prefix: pilot          # ids become pilot-001, pilot-002, ...
+          count: 10
+          seed: 7                # seed of the SAMPLING; each row gets its own world seed
+          world: [meadow, forest_edge, park]
+          people: [1, 2, 3, 4, 5]
+          altitude_m: [15, 25]
+
+    Every key holding a list is varied. Values are dealt like cards: the
+    list is shuffled and handed out in turn, then reshuffled when it runs
+    out. So with 3 worlds and 10 rows each world appears 3 or 4 times,
+    instead of the lopsided counts that independent random picks can give.
+    """
+    import random
+
+    block = dict(block)
+    prefix, count, seed = block.pop("prefix"), int(block.pop("count")), int(block.pop("seed"))
+    fixed = {**(defaults or {}), **{k: v for k, v in block.items() if not isinstance(v, list)}}
+    varied = {key: value for key, value in block.items() if isinstance(value, list)}
+
+    decks = {}
+    for key in sorted(varied):
+        rng = random.Random(f"{seed}:{key}")
+        deck = []
+        while len(deck) < count:
+            hand = list(varied[key])
+            rng.shuffle(hand)
+            deck.extend(hand)
+        decks[key] = deck[:count]
+
+    rows = []
+    for index in range(count):
+        choices = {key: decks[key][index] for key in decks}
+        rows.append(
+            row_from_dict(
+                {**fixed, **choices, "id": f"{prefix}-{index + 1:03d}", "seed": seed * 1000 + index + 1}
+            )
+        )
+    return rows
+
+
 def load_matrix(path: Path | str) -> list[VariationRow]:
-    """Read a matrix YAML. `defaults` are applied to every episode."""
+    """Read a matrix YAML: explicit `episodes`, a `sample` block, or both.
+    `defaults` are applied to every row."""
     document = yaml.safe_load(Path(path).read_text())
     defaults = document.get("defaults") or {}
-    rows = [row_from_dict({**defaults, **episode}) for episode in document["episodes"]]
+    rows = [row_from_dict({**defaults, **episode}) for episode in document.get("episodes") or []]
+    if document.get("sample"):
+        rows += sample_rows(document["sample"], defaults)
+    if not rows:
+        raise ValueError(f"{path}: no episodes and no sample block")
     ids = [row.id for row in rows]
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
     if duplicates:
