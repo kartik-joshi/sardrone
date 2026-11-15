@@ -53,6 +53,7 @@ from sardrone.mission.oracle import Detector, OracleDetector, Sighting
 from sardrone.mission.projection import CameraModel, DronePose
 from sardrone.sim.camera import CameraSource, SyntheticCamera, pinhole_intrinsics
 from sardrone.sim.drone import Drone, FakeDrone
+from sardrone.worlds.sdf import CAMERA_HEIGHT, CAMERA_HFOV_RAD, CAMERA_WIDTH
 from sardrone.sim.record_flight import (
     FlightPlan,
     FlightRecorder,
@@ -542,7 +543,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.fake:
         drone = FakeDrone()
         sleep = drone.sleep
-        camera = SyntheticCamera(pitch_deg=spec["camera_pitch_deg"])
+        # Same size and lens as the simulated camera, so the dry run plans the
+        # same lanes and applies the same pixel limits as the real flight.
+        # (With the default 640x480 stand-in, every 40 m mission was refused.)
+        camera = SyntheticCamera(
+            width=CAMERA_WIDTH, height=CAMERA_HEIGHT, hfov_deg=math.degrees(CAMERA_HFOV_RAD),
+            pitch_deg=spec["camera_pitch_deg"],
+        )  # fmt: skip
     else:
         from sardrone.sim.camera import CameraError, GazeboCamera
         from sardrone.sim.mavsdk_drone import MavsdkDrone
