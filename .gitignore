@@ -14,3 +14,5 @@ data/worlds/
 assets/
 runs/
 .env
+data/frames/
+data/overlays/

@@ -552,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
             camera = GazeboCamera(
                 model=spec["gz_model"], world=spec["gz_world"],
                 mount_m=spec["camera_mount_m"], pitch_deg=spec["camera_pitch_deg"],
+                boxes_topic=spec.get("boxes_topic"),
             ).open()  # fmt: skip
         except CameraError as error:
             print(f"error: {error}", file=sys.stderr)

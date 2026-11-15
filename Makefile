@@ -21,7 +21,7 @@ ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -116,6 +116,16 @@ batch: $(VENV)/.dev $(VENV)/.fly
 
 batch-fake: $(VENV)/.dev
 	$(PY) -m sardrone.batch --matrix $(MATRIX) --fake
+
+# ---- frames and labels (Phase 2D) --------------------------------------------
+
+# Labelled pictures at 2 per second from every episode -> FiftyOne "sar-frames".
+frames: $(VENV)/.dev $(VENV)/.view
+	$(PY) -m sardrone.fo.frames
+
+# 20 random frames with their label boxes drawn, for a human check.
+overlay: $(VENV)/.dev $(VENV)/.view
+	$(PY) -m sardrone.fo.overlay
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load

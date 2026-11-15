@@ -97,7 +97,10 @@ class SyntheticCamera:
 # without a simulator.
 
 FRAME_MAGIC = b"SARF"
-FRAME_HEADER = struct.Struct("<4sIIIIq")  # magic, width, height, format, length, sim ns
+# magic, width, height, format, length, sim ns, box count
+FRAME_HEADER = struct.Struct("<4sIIIIqI")
+BOX_RECORD = struct.Struct("<Iffff")  # label, min x, min y, max x, max y
+NO_BOXES = 0xFFFFFFFF  # "this stream carries no label boxes"
 
 # gz.msgs.PixelFormatType values we accept (checked in the installed gz.msgs10).
 GZ_L_INT8 = 1
@@ -115,6 +118,29 @@ class CameraError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class LabelBox:
+    """A rectangle Gazebo drew around one labelled object, in pixels.
+
+    x0, y0 is the top-left corner and x1, y1 the bottom-right corner, as
+    EDGES: a box covering pixel columns 10..19 has x0 = 10 and x1 = 20.
+    """
+
+    label: int  # the number given to the object in the world file
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+    @property
+    def width(self) -> float:
+        return self.x1 - self.x0
+
+    @property
+    def height(self) -> float:
+        return self.y1 - self.y0
+
+
 @dataclass
 class RawFrame:
     width: int
@@ -122,6 +148,7 @@ class RawFrame:
     pixel_format: int
     sim_time_ns: int
     data: bytes
+    boxes: tuple[LabelBox, ...] | None = None  # None = the stream has no labels
 
 
 def hfov_from_fx(width: int, fx: float) -> float:
@@ -159,13 +186,29 @@ def read_frame(stream: BinaryIO) -> RawFrame | None:
         return None
     if len(header) < FRAME_HEADER.size:
         raise CameraError("stream ended in the middle of a frame header")
-    magic, width, height, pixel_format, length, sim_time_ns = FRAME_HEADER.unpack(header)
+    magic, width, height, pixel_format, length, sim_time_ns, box_count = FRAME_HEADER.unpack(header)
     if magic != FRAME_MAGIC:
         raise CameraError(f"bad frame marker {magic!r}: the stream is out of step")
     data = _read_exact(stream, length)
     if len(data) < length:
         raise CameraError("stream ended in the middle of a frame")
-    return RawFrame(width, height, pixel_format, sim_time_ns, data)
+    boxes = None
+    if box_count != NO_BOXES:
+        raw = _read_exact(stream, box_count * BOX_RECORD.size)
+        if len(raw) < box_count * BOX_RECORD.size:
+            raise CameraError("stream ended in the middle of the label boxes")
+        boxes = tuple(
+            label_box(*BOX_RECORD.unpack_from(raw, index * BOX_RECORD.size))
+            for index in range(box_count)
+        )
+    return RawFrame(width, height, pixel_format, sim_time_ns, data, boxes)
+
+
+def label_box(label: int, min_x: float, min_y: float, max_x: float, max_y: float) -> LabelBox:
+    """Gazebo reports the first and last PIXEL of a box (both inside it).
+    Adding 1 to the last pixel turns that into edges, the usual convention
+    for image boxes (width = x1 - x0)."""
+    return LabelBox(label, min_x, min_y, max_x + 1.0, max_y + 1.0)
 
 
 def frame_to_jpeg(frame: RawFrame, quality: int = 85) -> bytes:
@@ -215,7 +258,12 @@ class GazeboCamera:
         stale_after_s: float = 3.0,
         mount_m: tuple[float, float, float] | None = None,
         pitch_deg: float | None = None,
+        boxes_topic: str | None = None,
     ):
+        # Gazebo's bounding-box sensor topic; None = pictures only.
+        self.boxes_topic = boxes_topic
+        # Label boxes belonging to the picture the last read() returned.
+        self.last_boxes: tuple[LabelBox, ...] | None = None
         if mount_m is not None:
             self.mount_m = tuple(mount_m)
         if pitch_deg is not None:
@@ -262,6 +310,7 @@ class GazeboCamera:
                 "--topic", self.topic,
                 "--info-topic", self.info_topic,
                 "--rate", str(self.rate_hz),
+                *(["--boxes-topic", self.boxes_topic] if self.boxes_topic else []),
             ],
             stdout=subprocess.PIPE,
             env=env,
@@ -338,4 +387,5 @@ class GazeboCamera:
                 if self._latest is frame:
                     self._jpeg = jpeg
         self.sim_time_ns = frame.sim_time_ns
+        self.last_boxes = frame.boxes
         return jpeg

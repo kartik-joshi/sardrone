@@ -40,6 +40,7 @@ TOPIC_TF = "/tf"
 TOPIC_TELEMETRY = "/telemetry"
 TOPIC_EVENTS = "/events"
 TOPIC_GROUND_TRUTH_PEOPLE = "/ground_truth/people"
+TOPIC_GROUND_TRUTH_BOXES = "/ground_truth/boxes"
 
 # ---- coordinate frame names -------------------------------------------------
 
@@ -192,6 +193,7 @@ class EpisodeWriter:
         self._tf = self._protobuf_channel(TOPIC_TF, msgs.FrameTransform)
         self._events = self._protobuf_channel(TOPIC_EVENTS, msgs.Log)
         self._people = self._protobuf_channel(TOPIC_GROUND_TRUTH_PEOPLE, msgs.SceneUpdate)
+        self._boxes = self._protobuf_channel(TOPIC_GROUND_TRUTH_BOXES, msgs.ImageAnnotations)
         self._telemetry = foxglove.Channel(
             TOPIC_TELEMETRY,
             schema=foxglove.Schema(
@@ -399,6 +401,47 @@ class EpisodeWriter:
             )
         update = msgs.SceneUpdate(entities=entities)
         self._log(self._people, TOPIC_GROUND_TRUTH_PEOPLE, update.encode(), wall_ns)
+
+    def log_ground_truth_boxes(self, wall_ns: int, boxes: list[dict]) -> None:
+        """Exact image labels for the camera frame logged at the SAME time.
+
+        Each box is a dict with `id` (e.g. "person_1") and pixel edges
+        `x0, y0, x1, y1`. Written as foxglove.ImageAnnotations: a closed
+        outline of four corners plus the id as text, so image viewers can
+        draw the labels over the picture. An EMPTY list is meaningful: it
+        says "this frame was checked and shows nobody".
+        """
+        timestamp = _ts(wall_ns)
+        outline = msgs.Color(r=1.0, g=0.0, b=1.0, a=1.0)
+        points, texts = [], []
+        for box in boxes:
+            x0, y0, x1, y1 = (float(box[key]) for key in ("x0", "y0", "x1", "y1"))
+            points.append(
+                msgs.PointsAnnotation(
+                    timestamp=timestamp,
+                    type=msgs.PointsAnnotationType.LineLoop,
+                    points=[
+                        msgs.Point2(x=x0, y=y0),
+                        msgs.Point2(x=x1, y=y0),
+                        msgs.Point2(x=x1, y=y1),
+                        msgs.Point2(x=x0, y=y1),
+                    ],
+                    outline_color=outline,
+                    thickness=2.0,
+                )
+            )
+            texts.append(
+                msgs.TextAnnotation(
+                    timestamp=timestamp,
+                    position=msgs.Point2(x=x0, y=y0),
+                    text=str(box["id"]),
+                    font_size=14.0,
+                    text_color=msgs.Color(r=1.0, g=1.0, b=1.0, a=1.0),
+                    background_color=msgs.Color(r=0.0, g=0.0, b=0.0, a=0.6),
+                )
+            )
+        annotations = msgs.ImageAnnotations(points=points, texts=texts)
+        self._log(self._boxes, TOPIC_GROUND_TRUTH_BOXES, annotations.encode(), wall_ns)
 
     # ---- finishing ----------------------------------------------------------
 

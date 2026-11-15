@@ -12,11 +12,13 @@ dependencies = [
     "foxglove-sdk>=0.31",  # writes MCAP with Foxglove protobuf schemas
     "pillow>=10",          # JPEG encoding for camera frames
     "pyyaml>=6",           # the variation matrix
+    "mcap>=1.2",           # reads episodes back (frame extraction, tests)
+    "mcap-protobuf-support>=0.5",
 ]
 
 [project.optional-dependencies]
 # Tests read episodes back with the independent pure-Python MCAP reader.
-dev = ["pytest>=8", "mcap>=1.2", "mcap-protobuf-support>=0.5"]
+dev = ["pytest>=8"]
 # Talking to PX4. v4 is the native binding; its API differs from mavsdk<4.
 fly = ["mavsdk>=4.2,<5"]
 # The viewer. Large (about 900 MB installed, bundles MongoDB).

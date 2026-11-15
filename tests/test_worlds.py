@@ -439,14 +439,40 @@ def test_missing_models_give_a_helpful_error(tmp_path):
         generate(row(), tmp_path / "worlds", fuel_dir=tmp_path / "empty", variant_dir=tmp_path / "v")
 
 
-def test_drone_model_camera_pose():
-    sdf = ET.fromstring(drone_model_sdf(45.0, (0.16, 0.0, -0.04)))
-    pose = [float(v) for v in sdf.find("model/include[2]/pose").text.split()]
+def test_drone_model_camera_pose_and_sensors():
+    model = ET.fromstring(drone_model_sdf(45.0, (0.16, 0.0, -0.04))).find("model")
+    link = model.find("link[@name='camera_link']")
+    pose = [float(v) for v in link.find("pose").text.split()]
     # Mount is from base_link; the file's pose is from the model origin, 0.24 m lower.
     approx_vec(pose, (0.16, 0.0, 0.20, 0.0, math.pi / 4, 0.0), tol=1e-6)
-    joint = sdf.find("model/joint/pose")
+    joint = model.find("joint/pose")
     assert joint.get("relative_to") == "base_link"
     approx_vec([float(v) for v in joint.text.split()][:3], (0.16, 0.0, -0.04))
+
+    # Two sensors in the same place with the same lens: pictures and label boxes.
+    colour, boxes = link.findall("sensor")
+    assert (colour.get("type"), boxes.get("type")) == ("camera", "boundingbox_camera")
+    assert boxes.find("topic").text == "sar/boxes"
+    assert boxes.find("camera/box_type").text == "visible_2d"  # only what is really visible
+    for tag in ("camera/horizontal_fov", "camera/image/width", "camera/image/height", "update_rate"):
+        assert colour.find(tag).text == boxes.find(tag).text, f"{tag} must match or labels misalign"
+
+
+def test_every_person_gets_a_distinct_gazebo_label(tmp_path, fake_fuel):
+    paths = make_world(tmp_path, fake_fuel, people=4)
+    spec = load_spec(paths.folder)
+    assert [p["label"] for p in spec["people"]] == [1, 2, 3, 4]
+    assert spec["boxes_topic"] == "/sar/boxes"
+    world = ET.fromstring(paths.sdf.read_text()).find("world")
+    for person in spec["people"]:
+        model = next(m for m in world.findall("model") if m.get("name") == person["id"])
+        plugin = model.find("plugin")
+        assert plugin.get("filename") == "gz-sim-label-system"
+        assert int(plugin.find("label").text) == person["label"]
+    # Trees and ground carry no label, so the sensor never boxes them.
+    for model in world.findall("model"):
+        if not model.get("name").startswith("person_"):
+            assert model.find("plugin") is None
 
 
 # ---- recording with ground truth ---------------------------------------------
@@ -524,3 +550,50 @@ def test_launch_explains_a_missing_px4_build(tmp_path, monkeypatch):
     monkeypatch.setenv("PX4_DIR", str(tmp_path / "nowhere"))
     with pytest.raises(launch.SimulationError, match="not built"):
         launch.gazebo_command(tmp_path)
+
+
+def test_flight_records_the_cameras_label_boxes_with_every_frame(tmp_path, fake_fuel):
+    from sardrone.mcap.episode_writer import TOPIC_GROUND_TRUTH_BOXES, TOPIC_IMAGE
+    from sardrone.sim.camera import LabelBox, SyntheticCamera
+
+    class LabelledCamera(SyntheticCamera):
+        """Pretends to be the Gazebo camera: reports two boxes with each frame."""
+
+        last_boxes = None
+
+        def read(self):
+            jpeg = super().read()
+            # person 2, an unknown label, and an empty sliver that must be dropped.
+            self.last_boxes = (
+                LabelBox(2, 100.0, 50.0, 120.0, 90.0), LabelBox(9, 5.0, 5.0, 9.0, 9.0),
+                LabelBox(1, 0.0, 285.0, 1.0, 285.5),
+            )  # fmt: skip
+            return jpeg
+
+    paths = make_world(tmp_path, fake_fuel, poses=("standing", "sitting", "lying"))
+    _, people, extra = world_settings(paths.folder)
+    drone = FakeDrone()
+    meta = EpisodeMeta(world="meadow", weather="clear", time_of_day="noon", mission_prompt="p")
+    path = tmp_path / "ep.mcap"
+    asyncio.run(
+        record_flight(
+            drone, path, meta, camera=LabelledCamera(), plan=FlightPlan(person_north_east_m=None),
+            sleep=drone.sleep, start_wall_ns=START_NS, ground_truth_people=people,
+        )  # fmt: skip
+    )
+    episode = Episode(path)
+    # One label message per picture, at exactly the picture's time.
+    assert episode.log_times(TOPIC_GROUND_TRUTH_BOXES) == episode.log_times(TOPIC_IMAGE)
+    labels = episode.decoded(TOPIC_GROUND_TRUTH_BOXES)[10]
+    assert [text.text for text in labels.texts] == ["person_2", "label_9"]
+    assert [(p.x, p.y) for p in labels.points[0].points][0] == (100.0, 50.0)
+
+
+def test_generated_images_have_no_label_messages(tmp_path):
+    from sardrone.mcap.episode_writer import TOPIC_GROUND_TRUTH_BOXES
+
+    drone = FakeDrone()
+    meta = EpisodeMeta(world="w", weather="clear", time_of_day="noon", mission_prompt="p")
+    path = tmp_path / "ep.mcap"
+    asyncio.run(record_flight(drone, path, meta, sleep=drone.sleep, start_wall_ns=START_NS))
+    assert TOPIC_GROUND_TRUTH_BOXES not in Episode(path).messages

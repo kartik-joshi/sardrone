@@ -79,6 +79,10 @@ class FlightRecorder:
         ground_truth_people: list[dict] | None = None,
     ):
         self.ground_truth_people = ground_truth_people or []
+        # Gazebo label number -> person id, for the bounding-box sensor.
+        self._label_ids = {
+            person["label"]: person["id"] for person in self.ground_truth_people if "label" in person
+        }
         self._samples = 0
         self.drone = drone
         self.episode = episode
@@ -142,6 +146,21 @@ class FlightRecorder:
         person_in_view = self._person_in_view(state)
         self._update_synthetic_camera(state, person_in_view)
         episode.log_image(wall_ns, self.camera.read())
+        # Exact labels for exactly this picture, when the camera supplies them
+        # (the Gazebo bounding-box sensor does; generated test images do not).
+        label_boxes = getattr(self.camera, "last_boxes", None)
+        if label_boxes is not None:
+            episode.log_ground_truth_boxes(
+                wall_ns,
+                [
+                    {
+                        "id": self._label_ids.get(box.label, f"label_{box.label}"),
+                        "x0": box.x0, "y0": box.y0, "x1": box.x1, "y1": box.y1,
+                    }
+                    for box in label_boxes
+                    if box.width >= 1.0 and box.height >= 1.0  # drop empty slivers at the image edge
+                ],
+            )  # fmt: skip
 
         if person_in_view and not self._person_seen:
             self._person_seen = True
@@ -317,6 +336,7 @@ def people_in_map(spec: dict) -> list[dict]:
         people.append(
             {
                 "id": person["id"],
+                "label": person.get("label", int(person["id"].rsplit("_", 1)[1])),
                 "pose": person["pose"],
                 "clothing": person["clothing"],
                 "occlusion": person["occlusion"],
@@ -408,6 +428,7 @@ def main(argv: list[str] | None = None) -> int:
     plan = FlightPlan()
     people, extra = None, None
     gz_model, gz_world, mount, pitch = args.gz_model, args.world, None, None
+    boxes_topic = None
     if args.world_dir:
         spec, people, extra = world_settings(args.world_dir)
         meta.world, meta.weather, meta.time_of_day = spec["world"], spec["weather"], spec["time_of_day"]
@@ -415,6 +436,7 @@ def main(argv: list[str] | None = None) -> int:
         plan.person_north_east_m = None  # real people come from the world, not a script
         gz_model, gz_world = spec["gz_model"], spec["gz_world"]
         mount, pitch = spec["camera_mount_m"], spec["camera_pitch_deg"]
+        boxes_topic = spec.get("boxes_topic")
         if args.out is None:
             path = next_episode_path(prefix=spec["id"])
     if args.side:
@@ -430,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             # Open first: a missing camera should stop us BEFORE the drone arms.
             camera = GazeboCamera(
-                model=gz_model, world=gz_world, mount_m=mount, pitch_deg=pitch
+                model=gz_model, world=gz_world, mount_m=mount, pitch_deg=pitch, boxes_topic=boxes_topic
             ).open()
         except CameraError as error:
             print(f"error: {error}", file=sys.stderr)

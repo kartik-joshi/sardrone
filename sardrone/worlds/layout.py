@@ -81,6 +81,11 @@ class PersonSpec:
     box_quat_wxyz: tuple[float, float, float, float]
 
     @property
+    def label(self) -> int:
+        """The number Gazebo reports for this person: 1 for person_1, ..."""
+        return int(self.id.rsplit("_", 1)[1])
+
+    @property
     def height_m(self) -> float:
         """How tall the person stands above the ground, in this pose."""
         return max(corner[2] for corner in self.box_corners())
@@ -116,10 +121,14 @@ class WorldSpec:
     gz_model: str = DRONE_NAME
     camera_mount_m: tuple[float, float, float] = CAMERA_MOUNT_M
     drone_body_height_m: float = DRONE_BODY_HEIGHT_M
+    boxes_topic: str = "/sar/boxes"  # Gazebo's label boxes for the drone camera
     extra: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        document = asdict(self)
+        for person, entry in zip(self.people, document["people"]):
+            entry["label"] = person.label
+        return document
 
 
 # ---- helpers -----------------------------------------------------------------
