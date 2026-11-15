@@ -47,10 +47,11 @@ DUPLICATE_THRESHOLD = 0.006
 SWEEP_THRESHOLDS = (0.002, 0.003, 0.004, 0.006, 0.01, 0.015)
 
 SMALL_BOX_PX = 16.0  # "small" person: longer side of the box below this
-VAL_EPISODES = ("pilot-009", "pilot-010")  # held out; never trained on
+VAL_EVERY = 10  # every 10th training episode is held out for validation
 
 VIEW_TRAIN = "train-v1"
 VIEW_VAL = "val-v1"
+VIEW_TEST = "sim-test"
 VIEW_HARD = "sar-hard-cases"
 VIEW_FALSE_ALARMS = "sar-false-alarms"
 
@@ -153,16 +154,35 @@ def tag_duplicates(dataset, threshold: float = DUPLICATE_THRESHOLD) -> dict:
     return stats
 
 
-def assign_splits(dataset, val_episodes=VAL_EPISODES) -> dict:
-    """Mark whole EPISODES as train or val.
+def split_of(episode_id: str) -> str:
+    """Which split an episode belongs to, from its id alone.
+
+        test-007   -> "test"   the sim-test set: scored once, never tuned on
+        train-020  -> "val"    every 10th training episode: for choosing
+                               settings and deciding when to stop training
+        train-021  -> "train"
+        pilot-003  -> "pilot"  pipeline debugging runs, not part of v1
+
+    Deriving the split from the id means it cannot drift: the same episode
+    is in the same split on every machine and every rerun.
+    """
+    prefix, _, number = episode_id.partition("-")
+    if prefix == "test":
+        return "test"
+    if prefix == "train" and number.isdigit():
+        return "val" if int(number) % VAL_EVERY == 0 else "train"
+    return "pilot"
+
+
+def assign_splits(dataset) -> dict:
+    """Mark whole EPISODES as train, val or test.
 
     Splitting by episode, not by frame, matters: frames from one flight
     over one world are closely related. If some went to training and others
     to validation, the model would be tested on scenes it has effectively
     seen, and the score would be too good ("leakage").
     """
-    episodes = dataset.values("episode_id")
-    dataset.set_values("split", ["val" if e in val_episodes else "train" for e in episodes])
+    dataset.set_values("split", [split_of(e) for e in dataset.values("episode_id")])
     return dict(dataset.count_values("split"))
 
 
@@ -186,6 +206,9 @@ def save_views(dataset) -> dict:
     views = {
         VIEW_TRAIN: unique.match(F("split") == "train"),
         VIEW_VAL: unique.match(F("split") == "val"),
+        # The test set keeps its near-duplicates: it should look like what a
+        # flight really produces, not like a cleaned-up version of it.
+        VIEW_TEST: dataset.match(F("split") == "test"),
         VIEW_HARD: unique.match(hard_case_filter()),
         VIEW_FALSE_ALARMS: dataset.match(F("false_alarms") > 0),
     }
@@ -236,7 +259,7 @@ def curate(dataset, map_path: Path | None = None, log=print) -> dict:
     dataset.info["curation"] = {
         "embedding_model": EMBEDDING_MODEL,
         "duplicate_threshold": DUPLICATE_THRESHOLD,
-        "val_episodes": list(VAL_EPISODES),
+        "val_every": VAL_EVERY,
         **summary,
     }
     dataset.save()

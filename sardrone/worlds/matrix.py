@@ -119,13 +119,22 @@ def sample_rows(block: dict, defaults: dict | None = None) -> list[VariationRow]
 
 
 def load_matrix(path: Path | str) -> list[VariationRow]:
-    """Read a matrix YAML: explicit `episodes`, a `sample` block, or both.
-    `defaults` are applied to every row."""
+    """Read a matrix YAML: explicit `episodes`, a `sample` block, a list of
+    blocks under `samples`, or any mix. `defaults` are applied to every row.
+
+    Several blocks in one file are how a dataset keeps its training and
+    test episodes apart: each block has its own prefix and its own seed, so
+    no test world can be the same as a training world.
+    """
     document = yaml.safe_load(Path(path).read_text())
     defaults = document.get("defaults") or {}
     rows = [row_from_dict({**defaults, **episode}) for episode in document.get("episodes") or []]
-    if document.get("sample"):
-        rows += sample_rows(document["sample"], defaults)
+    blocks = ([document["sample"]] if document.get("sample") else []) + (document.get("samples") or [])
+    for block in blocks:
+        rows += sample_rows(block, defaults)
+    seeds = [row.seed for row in rows]
+    if len(set(seeds)) != len(seeds):
+        raise ValueError(f"{path}: two episodes share a world seed; give each sample block its own seed")
     if not rows:
         raise ValueError(f"{path}: no episodes and no sample block")
     ids = [row.id for row in rows]

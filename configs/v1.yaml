@@ -1,0 +1,27 @@
+# The v1 dataset: 60 training episodes and 15 sim-test episodes.
+#
+# The two blocks have different seeds, so every test world is a world the
+# model has never trained on. Run with:
+#     make batch MATRIX=configs/v1.yaml
+defaults:
+  area_m: 60
+  camera_pitch_deg: 45
+
+samples:
+  - prefix: train
+    count: 60
+    seed: 11
+    world: [meadow, forest_edge, park]
+    people: [1, 2, 3, 4, 5]
+    occlusion: [none, none, partial]
+    time_of_day: [noon, golden_hour, dusk]
+    altitude_m: [15, 25, 40]
+
+  - prefix: test
+    count: 15
+    seed: 97
+    world: [meadow, forest_edge, park]
+    people: [1, 2, 3, 4, 5]
+    occlusion: [none, none, partial]
+    time_of_day: [noon, golden_hour, dusk]
+    altitude_m: [15, 25, 40]

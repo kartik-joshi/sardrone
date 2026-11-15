@@ -41,12 +41,12 @@ def dataset(tmp_path):
     data = fo.Dataset(name)
     rows = [
         # episode, time of day, embedding, ground truth
-        ("pilot-001", "noon", [1.0, 0.0, 0.0], [person(0.1, 0.1)]),
-        ("pilot-001", "noon", [0.9999, 0.01, 0.0], [person(0.1, 0.1)]),
-        ("pilot-001", "noon", [0.0, 1.0, 0.0], []),
-        ("pilot-002", "dusk", [0.0, 0.0, 1.0], [person(0.5, 0.5)]),
-        ("pilot-009", "noon", [0.7, 0.7, 0.0], [person(0.3, 0.3, pose="lying"), person(0.6, 0.6, occlusion="partial")]),
-        ("pilot-010", "golden_hour", [0.0, 0.7, 0.7], [person(0.2, 0.7, width_px=10.0, height_px=12.0)]),
+        ("train-001", "noon", [1.0, 0.0, 0.0], [person(0.1, 0.1)]),
+        ("train-001", "noon", [0.9999, 0.01, 0.0], [person(0.1, 0.1)]),
+        ("train-001", "noon", [0.0, 1.0, 0.0], []),
+        ("train-002", "dusk", [0.0, 0.0, 1.0], [person(0.5, 0.5)]),
+        ("train-010", "noon", [0.7, 0.7, 0.0], [person(0.3, 0.3, pose="lying"), person(0.6, 0.6, occlusion="partial")]),
+        ("test-001", "golden_hour", [0.0, 0.7, 0.7], [person(0.2, 0.7, width_px=10.0, height_px=12.0)]),
     ]  # fmt: skip
     samples = []
     for index, (episode, time_of_day, embedding, truth) in enumerate(rows):
@@ -122,13 +122,23 @@ def test_a_stricter_threshold_keeps_everything_and_retagging_replaces(dataset):
     assert len(dataset.match_tags(curate.DUPLICATE_TAG)) == 0
 
 
+def test_split_comes_from_the_episode_id():
+    assert curate.split_of("test-007") == "test"
+    assert curate.split_of("train-021") == "train"
+    assert [curate.split_of(f"train-{n:03d}") for n in (10, 20, 60)] == ["val"] * 3
+    assert curate.split_of("pilot-003") == "pilot" and curate.split_of("pilot-meadow-search") == "pilot"
+    # 60 training episodes: 6 for validation, 54 to train on.
+    splits = [curate.split_of(f"train-{n:03d}") for n in range(1, 61)]
+    assert splits.count("val") == 6 and splits.count("train") == 54
+
+
 def test_whole_episodes_go_to_one_split(dataset):
     counts = curate.assign_splits(dataset)
-    assert counts == {"train": 4, "val": 2}
+    assert counts == {"train": 4, "val": 1, "test": 1}
     for episode in dataset.distinct("episode_id"):
         splits = dataset.match(fo.ViewField("episode_id") == episode).distinct("split")
-        assert len(splits) == 1, "frames of one flight must never be in both splits"
-    assert frame(dataset, 4).split == "val" and frame(dataset, 0).split == "train"
+        assert len(splits) == 1, "frames of one flight must never be in two splits"
+    assert frame(dataset, 4).split == "val" and frame(dataset, 5).split == "test"
 
 
 def test_saved_views(dataset):
@@ -136,15 +146,15 @@ def test_saved_views(dataset):
     curate.tag_duplicates(dataset, threshold=0.004)
     curate.assign_splits(dataset)
     counts = curate.save_views(dataset)
-    # 4 train frames minus 1 duplicate; 2 val frames; nothing flagged yet.
-    assert counts[curate.VIEW_TRAIN] == 3 and counts[curate.VIEW_VAL] == 2
-    assert counts[curate.VIEW_FALSE_ALARMS] == 0
+    # 4 train frames minus 1 duplicate; 1 val frame; 1 test frame; nothing flagged yet.
+    assert counts[curate.VIEW_TRAIN] == 3 and counts[curate.VIEW_VAL] == 1
+    assert counts[curate.VIEW_TEST] == 1 and counts[curate.VIEW_FALSE_ALARMS] == 0
     # Hard: the dusk frame, the lying + occluded frame, and the small (12 px) person.
     hard = dataset.load_saved_view(curate.VIEW_HARD)
     assert sorted(s.filepath[-11:] for s in hard) == ["frame_3.jpg", "frame_4.jpg", "frame_5.jpg"]
-    assert set(dataset.list_saved_views()) >= {curate.VIEW_TRAIN, curate.VIEW_VAL, curate.VIEW_HARD}
     train = dataset.load_saved_view(curate.VIEW_TRAIN)
-    assert not set(train.distinct("episode_id")) & set(curate.VAL_EPISODES)
+    assert train.distinct("split") == ["train"]
+    assert not set(train.distinct("episode_id")) & set(dataset.load_saved_view(curate.VIEW_TEST).distinct("episode_id"))
     assert curate.save_views(dataset) == counts  # saving again replaces, no error
 
 

@@ -187,3 +187,33 @@ def test_uncommitted_changes_are_flagged(tmp_path, monkeypatch):
 def test_git_commit_reads_this_repository():
     commit, dirty = batch.git_commit()
     assert commit != "unknown" and len(commit) >= 7 and isinstance(dirty, bool)
+
+
+def test_v1_matrix_keeps_train_and_test_worlds_apart():
+    from pathlib import Path
+
+    the_rows = load_matrix(Path(__file__).resolve().parents[1] / "configs" / "v1.yaml")
+    train = [r for r in the_rows if r.id.startswith("train-")]
+    test = [r for r in the_rows if r.id.startswith("test-")]
+    assert len(train) == 60 and len(test) == 15 and len(the_rows) == 75
+    # No test world can equal a training world: the seeds do not overlap.
+    assert not {r.seed for r in train} & {r.seed for r in test}
+    assert len({r.seed for r in the_rows}) == 75
+    for group in (train, test):
+        assert {r.world for r in group} == {"meadow", "forest_edge", "park"}
+        assert {r.time_of_day for r in group} == {"noon", "golden_hour", "dusk"}
+        assert {r.altitude_m for r in group} == {15.0, 25.0, 40.0}
+        assert {r.people for r in group} == {1, 2, 3, 4, 5}
+    # Balanced: 60 rows over 3 worlds is exactly 20 each.
+    assert [sum(r.world == w for r in train) for w in ("meadow", "forest_edge", "park")] == [20, 20, 20]
+
+
+def test_two_blocks_with_the_same_seed_are_refused(tmp_path):
+    matrix = tmp_path / "m.yaml"
+    matrix.write_text(
+        "samples:\n"
+        "  - {prefix: a, count: 2, seed: 5, world: [meadow]}\n"
+        "  - {prefix: b, count: 2, seed: 5, world: [park]}\n"
+    )
+    with pytest.raises(ValueError, match="share a world seed"):
+        load_matrix(matrix)
