@@ -308,6 +308,7 @@ def test_training_record_keeps_every_setting():
     config = asdict(TrainConfig())
     assert config["imgsz"] == 1280, "640 would shrink a 30 px person to 15 px"
     assert config["seed"] == 51 and config["flipud"] == 0.0
+    assert config["freeze"] is None, "by default every layer is trained"
     assert {"mosaic", "fliplr", "hsv_h", "hsv_s", "hsv_v", "scale", "translate"} <= set(config)
 
 

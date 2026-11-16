@@ -40,6 +40,13 @@ class TrainConfig:
     workers: int = 4
     patience: int = 15  # stop early if validation has not improved for this many epochs
     seed: int = 51
+    # How many of the network's first modules keep their pretrained weights
+    # untouched. YOLO11's "backbone" (the part that turns pixels into
+    # general features) is modules 0 to 10, so 11 freezes exactly that and
+    # trains only the detection head. None = train everything.
+    # (Ultralytics: an int n freezes model.0 ... model.n-1; checked in
+    # engine/trainer.py of 8.4.214.)
+    freeze: int | None = None
     # Augmentation. Ultralytics' defaults, written out so a run's record is
     # complete and so later versions can change exactly one of them.
     mosaic: float = 1.0
@@ -120,10 +127,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch", type=int)
     parser.add_argument("--device")
     parser.add_argument("--workers", type=int)
+    parser.add_argument("--freeze", type=int, help="freeze the first N modules (11 = the whole backbone)")
     args = parser.parse_args(argv)
 
     config = TrainConfig()
-    for key in ("epochs", "imgsz", "batch", "device", "workers"):
+    for key in ("epochs", "imgsz", "batch", "device", "workers", "freeze"):
         if getattr(args, key) is not None:
             setattr(config, key, getattr(args, key))
     record = train(DEFAULT_EXPORT_ROOT / args.export, args.version, config, commit=git_commit())
