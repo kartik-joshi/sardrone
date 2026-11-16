@@ -318,3 +318,79 @@ def test_subsample_is_seeded_and_spread_over_episodes(frames):
     assert sorted(sample.values("episode_id")) == ["a", "a", "b"]
     assert sample.values("id") == export.subsample_by_episode(frames, 2, seed=1).values("id")
     assert len(export.subsample_by_episode(frames, 10)) == 4  # asking for more than exists
+
+
+# ---- camera realism ----------------------------------------------------------
+
+
+def test_realism_draw_is_seeded_by_name_and_within_range():
+    from sardrone.train.realism import RealismConfig, draw_for
+
+    config = RealismConfig()
+    first, _ = draw_for("frame_1.jpg", 51)
+    assert first == draw_for("frame_1.jpg", 51)[0]
+    assert first != draw_for("frame_2.jpg", 51)[0] and first != draw_for("frame_1.jpg", 52)[0]
+    draws = [draw_for(f"f{i}.jpg", 51)[0] for i in range(400)]
+    assert all(config.gain[0] <= d.gain <= config.gain[1] for d in draws)
+    assert all(config.jpeg_quality[0] <= d.jpeg_quality <= config.jpeg_quality[1] for d in draws)
+    assert all(d.blur_radius_px == 0.0 or 0.3 <= d.blur_radius_px <= 1.2 for d in draws)
+    blurred = sum(d.blur_radius_px > 0 for d in draws)
+    assert 160 <= blurred <= 240  # about half of 400
+
+
+def test_realism_effects_are_measurable():
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    from sardrone.train.realism import RealismDraw, apply
+
+    grey = Image.new("RGB", (128, 96), (128, 128, 128))
+
+    def result(draw):
+        return np.asarray(Image.open(io.BytesIO(apply(grey, draw, np.random.default_rng(0)))), dtype=float)
+
+    plain = RealismDraw(gain=1.0, gamma=1.0, blur_radius_px=0.0, noise_sigma=0.0, jpeg_quality=95)
+    assert result(plain).mean() == pytest.approx(128.0, abs=1.0)
+    assert result(plain).shape == (96, 128, 3)  # size is unchanged, so the boxes still fit
+    # Gain 1.2 brightens by 20 %: 128 -> 153.6.
+    brighter = RealismDraw(1.2, 1.0, 0.0, 0.0, 95)
+    assert result(brighter).mean() == pytest.approx(153.6, abs=1.5)
+    # Gamma 1.15 darkens mid-grey: (128/255) ** 1.15 * 255 = 115.4.
+    assert result(RealismDraw(1.0, 1.15, 0.0, 0.0, 95)).mean() == pytest.approx(115.4, abs=1.5)
+    # Noise of sigma 6 shows up as about that much spread (JPEG smooths a little).
+    noisy = result(RealismDraw(1.0, 1.0, 0.0, 6.0, 95))
+    assert 3.5 < noisy.std() < 7.0 and noisy.mean() == pytest.approx(128.0, abs=1.0)
+    # Stronger compression gives a smaller file for the same noisy picture.
+    rng = np.random.default_rng(1)
+    busy = Image.fromarray(rng.integers(0, 255, (96, 128, 3), dtype=np.uint8))
+    low = apply(busy, RealismDraw(1.0, 1.0, 0.0, 0.0, 35), np.random.default_rng(0))
+    high = apply(busy, RealismDraw(1.0, 1.0, 0.0, 0.0, 85), np.random.default_rng(0))
+    assert len(low) < 0.6 * len(high)
+
+
+def test_export_with_realism_changes_training_images_only(frames, tmp_path):
+    views = {"train": frames.limit(3), "val": frames.skip(3)}
+    out = tmp_path / "realism"
+    manifest = export.export_dataset(views, out, "v3", realism_seed=51)
+    train_image, val_image = out / "images" / "train" / "frame_0.jpg", out / "images" / "val" / "frame_3.jpg"
+    assert not train_image.is_symlink() and val_image.is_symlink()
+    assert train_image.read_bytes() != (tmp_path / "src" / "frame_0.jpg").read_bytes()
+    assert manifest["realism_seed"] == 51
+    # Same seed, same bytes, same hash; and the hash differs from the plain export.
+    assert export.export_dataset(views, tmp_path / "again", "v3", realism_seed=51)["hash"] == manifest["hash"]
+    assert export.export_dataset(views, tmp_path / "plain", "v1")["hash"] != manifest["hash"]
+    # Labels are untouched.
+    assert (out / "labels" / "train" / "frame_1.txt").read_text() == "0 0.125000 0.250000 0.050000 0.100000\n"
+
+
+def test_extra_real_images_are_added_to_training_unchanged(frames, tmp_path):
+    views = {"train": frames.limit(2), "val": frames.skip(3)}
+    extra = frames.skip(2).limit(1)  # stands in for a real photograph
+    out = tmp_path / "mixed"
+    manifest = export.export_dataset(views, out, "v4", realism_seed=51, extra_train=extra, notes={"real": "1 image"})
+    assert manifest["splits"]["train"]["images"] == 3 and manifest["extra_train_images"] == 1
+    assert (out / "images" / "train" / "frame_2.jpg").is_symlink(), "real images are linked, never degraded"
+    assert not (out / "images" / "train" / "frame_0.jpg").is_symlink()
+    assert manifest["notes"] == {"real": "1 image"}
