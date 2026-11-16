@@ -194,3 +194,38 @@ def test_average_displacement_error():
     assert average_displacement_error([], []) == 0.0
     with pytest.raises(ValueError):
         average_displacement_error(predicted, actual[:2])
+
+
+def test_mission_report_totals(tmp_path):
+    from sardrone.mission.report import row_from_sidecar, totals, write_report
+
+    def sidecar(episode, placed, found, rescues, false_reports, first):
+        return {
+            "episode_id": episode, "world": "meadow", "time_of_day": "noon", "altitude_m": 15, "occlusion": "none",
+            "detector": "yolo:v1", "duration_s": 200.04, "event_counts": {"search_complete": 1},
+            "mission_metrics": {
+                "people_placed": placed, "people_found": found, "missed_rescues": rescues,
+                "false_reports": false_reports, "false_alarms": 1, "time_to_first_find_s": first,
+                "mean_report_error_m": 0.5, "coverage_percent": 100.0,
+                "cross_track_error": {"mean_m": 0.4, "max_m": 1.5}, "tracker_ade": {"mean_px": 3.0, "samples": 9},
+                "tracker_ade_coasting": None,
+            },
+        }  # fmt: skip
+
+    rows = [
+        row_from_sidecar(sidecar("test-001", 3, 3, [], 0, 40.0)),
+        row_from_sidecar(sidecar("test-002", 2, 1, ["person_2"], 1, 60.0)),
+        row_from_sidecar(sidecar("test-003", 1, 0, None, 0, None)),  # nothing measurable
+    ]
+    assert rows[1]["missed_rescues"] == 1 and rows[2]["missed_rescues"] == "" and rows[2]["time_to_first_find_s"] == ""
+    summary = totals(rows)
+    assert (summary["people_placed"], summary["people_found"]) == (6, 4)
+    assert summary["recall"] == pytest.approx(4 / 6, abs=1e-4)
+    assert summary["episodes_all_found"] == 1 and summary["false_reports"] == 1 and summary["false_alarms"] == 3
+    assert summary["missed_rescues"] == 1
+    assert summary["mean_time_to_first_find_s"] == "50.00"  # the episode with no find is left out
+    assert summary["mean_ade_coasting_px"] == "n/a"
+    write_report(rows, "t", "Test", out_dir=tmp_path)
+    text = (tmp_path / "t.md").read_text()
+    assert "| People found (reported within 3 m) | 4 |" in text and "| test-002 |" in text
+    assert (tmp_path / "t.csv").read_text().splitlines()[0].startswith("episode_id,world")
