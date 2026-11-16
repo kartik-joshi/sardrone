@@ -43,6 +43,10 @@ class TrainConfig:
     # Augmentation. Ultralytics' defaults, written out so a run's record is
     # complete and so later versions can change exactly one of them.
     mosaic: float = 1.0
+    # Mosaic (four images glued into one) is switched off for the last few
+    # epochs so the model finishes on normal-looking pictures. Ultralytics'
+    # default of 10 would switch it off for a whole 10-epoch run.
+    close_mosaic: int = 2
     fliplr: float = 0.5
     flipud: float = 0.0
     hsv_h: float = 0.015

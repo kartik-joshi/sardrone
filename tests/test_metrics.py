@@ -309,3 +309,12 @@ def test_training_record_keeps_every_setting():
     assert config["imgsz"] == 1280, "640 would shrink a 30 px person to 15 px"
     assert config["seed"] == 51 and config["flipud"] == 0.0
     assert {"mosaic", "fliplr", "hsv_h", "hsv_s", "hsv_v", "scale", "translate"} <= set(config)
+
+
+def test_subsample_is_seeded_and_spread_over_episodes(frames):
+    frames.set_values("episode_id", ["a", "a", "a", "b"])
+    sample = export.subsample_by_episode(frames, 2, seed=1)
+    # About half of each episode: 2 of a's 3 frames (rounded from 1.5), and b's only frame.
+    assert sorted(sample.values("episode_id")) == ["a", "a", "b"]
+    assert sample.values("id") == export.subsample_by_episode(frames, 2, seed=1).values("id")
+    assert len(export.subsample_by_episode(frames, 10)) == 4  # asking for more than exists

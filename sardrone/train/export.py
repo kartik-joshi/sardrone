@@ -46,6 +46,33 @@ def label_text(detections, classes=CLASSES) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
+def subsample_by_episode(view, count: int, seed: int = 51):
+    """A seeded sample of about `count` frames, spread over episodes in
+    proportion to their size.
+
+    Frames from one flight are closely related, so a plain random sample
+    could by chance take many frames from a few flights. Sampling within
+    each episode keeps every world represented. Used when the full training
+    set is too large for the available compute; the choice is recorded in
+    the export.
+    """
+    import random
+
+    ids, episodes = view.values("id"), view.values("episode_id")
+    if count >= len(ids):
+        return view
+    by_episode: dict = {}
+    for sample_id, episode in zip(ids, episodes):
+        by_episode.setdefault(episode, []).append(sample_id)
+    rng = random.Random(seed)
+    chosen = []
+    for episode in sorted(by_episode):
+        members = sorted(by_episode[episode])
+        share = max(1, round(count * len(members) / len(ids)))
+        chosen += rng.sample(members, min(share, len(members)))
+    return view.select(chosen)
+
+
 def export_split(view, out_dir: Path, split: str, gt_field: str = "ground_truth") -> list[tuple[str, str, str]]:
     """Link images and write labels for one split.
     Returns [(relative image path, sha256 of the image, label text)]."""
@@ -127,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--train", default=VIEW_TRAIN, help="saved view to train on")
     parser.add_argument("--val", default=VIEW_VAL, help="saved view to validate on")
     parser.add_argument("--out", type=Path, default=DEFAULT_EXPORT_ROOT)
+    parser.add_argument("--max-train", type=int, help="sample this many training frames, spread over episodes")
+    parser.add_argument("--seed", type=int, default=51)
     args = parser.parse_args(argv)
 
     dataset = fo.load_dataset(args.dataset)
@@ -134,9 +163,12 @@ def main(argv: list[str] | None = None) -> int:
     if not len(views["train"]) or not len(views["val"]):
         print(f"error: view {args.train!r} or {args.val!r} is empty - run `make curate` first")
         return 1
-    manifest = export_dataset(
-        views, args.out / args.name, args.name, {"train": args.train, "val": args.val}, git_commit()
-    )
+    names = {"train": args.train, "val": args.val}
+    if args.max_train:
+        full = len(views["train"])
+        views["train"] = subsample_by_episode(views["train"], args.max_train, args.seed)
+        names["train"] = f"{args.train} (sample of {len(views['train'])} from {full}, by episode, seed {args.seed})"
+    manifest = export_dataset(views, args.out / args.name, args.name, names, git_commit())
     print(json.dumps(manifest, indent=2))
     print(f"wrote {args.out / args.name}")
     return 0
