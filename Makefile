@@ -21,7 +21,7 @@ ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap pipeline
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -174,6 +174,13 @@ evaluate: $(VENV)/.dev $(VENV)/.view $(VENV)/.yolo
 # Map of simulated vs real frames, and how separable the two are.
 gapmap: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
 	$(PY) -m sardrone.fo.gapmap
+
+# ---- the loop with a retraining gate (Phase 3E) -------------------------------
+
+# Dry run by default; `make pipeline RUN=1 VERSION=v5` really runs it.
+RUN ?=
+pipeline: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
+	$(PY) -m sardrone.pipeline --version $(VERSION) --max-train 6000 $(if $(RUN),--run,)
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load
