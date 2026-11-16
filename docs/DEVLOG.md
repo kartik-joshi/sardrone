@@ -803,3 +803,76 @@ Where the six misses are:
   includes PX4's pose error here, unlike with the oracle.
 - The tracker ADE compares the tracker's one-frame-ahead prediction with
   the simulator's label box centre, matched by nearest box.
+
+## Phase 3C, v2: domain randomization (2026-11-16)
+
+### Done
+
+- `randomize: true` in a matrix row also varies: ground palette (7
+  families from lush green to bare earth) and patch scale, footpaths in
+  any world, sun azimuth all round the compass, elevation, brightness,
+  ambient light and colour temperature, clothing (21 colours), body size
+  (0.85 to 1.1), and 15 to 45 unlabelled distractors (rocks, logs, bushes,
+  coloured boxes). Rows without the switch are unchanged: all 75 recorded
+  v1 worlds were regenerated and compared, with no difference.
+- `configs/v2.yaml`: 30 randomized training episodes, recorded at commit
+  c9ab4b8 in 2.5 h. 30 of 30 completed; one (dr-023) needed its retry
+  because PX4 was not ready within 60 s. 90 of 90 people reported (oracle).
+  14,241 frames, of which 13,760 after de-duplication (`train-v2-dr`).
+- Export `v2-6k`, hash `61b514bcb1580625`: 6,000 of those frames by
+  episode. Same network, epochs and settings as v1. 177.8 minutes, commit
+  af178c1. Validation and test sets are the v1 ones (plain worlds).
+
+### Predicted before training
+
+The image-level check on the randomized frames, run while v2 trained:
+
+| | |
+| --- | --- |
+| Randomized simulated vs real: linear classifier accuracy | 100 % |
+| Randomized vs plain simulated | 93.2 % |
+| Mean cosine distance to the nearest real frame, plain simulated | 0.291 |
+| ... randomized simulated | 0.303 |
+| ... between real frames | 0.023 |
+
+Randomization made simulated frames different from each other and no
+closer to the real ones. Prediction: v2 will not close the gap.
+
+### Result
+
+| Version | Sim-test mAP@0.5 | SARD mAP@0.5 | Gap | SARD precision / recall |
+| --- | --- | --- | --- | --- |
+| v0 pretrained | 0.453 | 0.591 (0.574 to 0.607) | -0.138 | 0.83 / 0.51 |
+| v1 simulation only | 0.947 | 0.014 (0.009 to 0.019) | 0.933 | 0.19 / 0.01 |
+| v2 domain randomization | 0.935 (0.931 to 0.941) | 0.032 (0.029 to 0.038) | 0.902 (0.896 to 0.910) | 0.27 / 0.04 |
+| v3 camera realism | 0.941 | 0.020 (0.017 to 0.023) | 0.921 | 0.13 / 0.02 |
+| v4 + 5 % real | 0.934 | 0.547 (0.529 to 0.570) | 0.387 | 0.70 / 0.58 |
+
+- **The prediction held.** The real score roughly doubled, from 0.014 to
+  0.032, and the intervals do not overlap, so this is a real effect. It is
+  also useless: 4 % recall on real images.
+- **Randomization cost almost nothing in simulation.** v2 never saw a
+  plain world and still scores 0.935 on the plain test worlds (v1: 0.947),
+  from 30 flights instead of 54.
+- **Of the three levers the plan named, only real data moved the real
+  score in a way that matters.** Rendering more variety of the same
+  content (v2) and degrading the pixels (v3) both left it near zero.
+
+### What this means for the simulator
+
+Randomizing colours, light and clutter is what this generator can do
+cheaply, and it is not what separates it from SARD. The differences are
+structural: body shapes and poses from three meshes, no long grass or
+undergrowth that partly covers a person, flat ground, and no real texture
+at the scale of a 30 px figure. Closing the gap from the simulation side
+would need new content, not new parameters.
+
+### How far to trust this
+
+- v2 and v1 differ in more than randomization: v2's 6,000 frames come from
+  30 flights, v1's from 54. The comparison is "same budget of frames", not
+  "same worlds plus randomization".
+- v2 was not combined with real images. Whether randomization helps ON TOP
+  of real data (a "v5") is untested, and is the more interesting question
+  given these results.
+- One run, one seed, as for every version.

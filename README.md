@@ -25,14 +25,16 @@ than not training it at all.**
 | --- | --- | --- | --- | --- |
 | v0 | pretrained YOLO11n, never trained on our data | 0.453 | 0.591 | -0.138 |
 | v1 | fine-tuned on simulation only | 0.947 | 0.014 | 0.933 |
+| v2 | v1's recipe on domain-randomized worlds | 0.935 | 0.032 | 0.902 |
 | v3 | v1 + camera realism (noise, blur, JPEG, exposure) | 0.941 | 0.020 | 0.921 |
 | v4 | v3 + 300 real images (5 %) | 0.934 | 0.547 | 0.387 |
 
 The pretrained network already found half the real people. Ten epochs on
 simulated frames taught it to find 93 % of simulated people and left it
-nearly blind to real ones. Camera realism did almost nothing. Three hundred
-real images restored real performance without costing anything on
-simulation. Full table with 95 % bootstrap intervals:
+nearly blind to real ones. Domain randomization (ground, light, clothing,
+body size, clutter) and camera realism each left the real score near zero.
+Three hundred real images restored real performance without costing
+anything on simulation. Full table with 95 % bootstrap intervals:
 [docs/results/scorecard.md](docs/results/scorecard.md).
 
 **2. v4 does not beat the untrained network on real photos** (0.547 against
@@ -176,7 +178,7 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   numbers are for simulated worlds built by the same generator as the
   training worlds.
 - **Narrow simulated content.** Three body meshes, two tree models, flat
-  ground. The real test images (tall dry grass, quarry stone, roads) look
+  ground. Randomizing colours, light and clutter did not change that. The real test images (tall dry grass, quarry stone, roads) look
   nothing like it, and a linear classifier on image embeddings separates
   the two domains 100 % of the time.
 - **v4's real score is flattered.** Its 300 real training images and the

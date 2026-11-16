@@ -96,6 +96,7 @@ version. Each version changes one thing:
 | --- | --- | --- |
 | v0 | none: COCO weights as downloaded | |
 | v1 | the 5,999 simulated frames | `d741bdbb19fbe45d` |
+| v2 | 6,000 frames from 30 separate flights over domain-randomized worlds: ground palette, sun direction and strength, clothing, body size, 15 to 45 unlabelled distractors | `61b514bcb1580625` |
 | v3 | v1's frames, each degraded like a real camera: exposure, blur, sensor noise, JPEG compression | `86479461bb4f3bb7` |
 | v4 | v3's frames plus 300 real images from `sard-train-pool` (5 %) | `7918bf71d200e0da` |
 
@@ -133,10 +134,11 @@ Source: `docs/results/scorecard.csv`.
 | --- | --- | --- | --- | --- |
 | v0 pretrained | 0.453 (0.440 to 0.465) | 0.591 (0.574 to 0.607) | -0.138 (-0.159 to -0.117) | 0.83 / 0.51 |
 | v1 simulation only | 0.947 (0.944 to 0.953) | 0.014 (0.009 to 0.019) | 0.933 (0.927 to 0.941) | 0.19 / 0.01 |
+| v2 domain randomization | 0.935 (0.931 to 0.941) | 0.032 (0.029 to 0.038) | 0.902 (0.896 to 0.910) | 0.27 / 0.04 |
 | v3 + camera realism | 0.941 (0.935 to 0.945) | 0.020 (0.017 to 0.023) | 0.921 (0.913 to 0.925) | 0.13 / 0.02 |
 | v4 + 5 % real | 0.934 (0.931 to 0.941) | 0.547 (0.529 to 0.570) | 0.387 (0.364 to 0.408) | 0.70 / 0.58 |
 
-mAP@0.5:0.95 on SARD: v0 0.301, v1 0.007, v3 0.005, v4 0.235.
+mAP@0.5:0.95 on SARD: v0 0.301, v1 0.007, v2 0.013, v3 0.005, v4 0.235.
 
 **Finding 1. Simulation-only fine-tuning destroyed real-world
 performance.** The pretrained network scored 0.591 on real photographs.
@@ -145,7 +147,13 @@ on simulated worlds it had never seen. This is catastrophic forgetting:
 every training example of `person` was a rendered figure on rendered
 ground, and the network redefined the class around those.
 
-**Finding 2. Making simulated images look like camera output did not
+**Finding 2a. Domain randomization helped measurably and uselessly.**
+v2's real score is 0.032 against v1's 0.014, and the intervals do not
+overlap, so the effect is real. Recall on real images is still 4 %. In
+simulation it cost almost nothing: v2 never saw a plain world and scores
+0.935 on the plain test worlds.
+
+**Finding 2b. Making simulated images look like camera output did not
 help.** v3's real score is 0.020 against v1's 0.014. The two intervals overlap
 (0.009 to 0.019 and 0.017 to 0.023), so even that small difference is not
 established, and it would be of no practical use if it were.
@@ -168,12 +176,17 @@ Source: `docs/results/domain_gap.json`.
 | --- | --- |
 | simulated vs real | 100 % |
 | simulated after camera degradation vs real | 100 % |
+| domain-randomized simulated vs real | 100 % |
+| domain-randomized vs plain simulated | 93.2 % |
 | random halves of simulated | 50.4 % |
 | random halves of real | 49.7 % |
 
-The two domains are trivially separable, and the camera-realism treatment
-does not change that. This check was run before v3 was trained and
-predicted its result.
+The two domains are trivially separable, and neither the camera-realism
+treatment nor domain randomization changes that. Randomized frames are
+also no nearer to real ones: mean cosine distance to the nearest real
+frame is 0.303 for randomized and 0.291 for plain simulated frames,
+against 0.023 between real frames. Each check was run before the
+corresponding model finished training and predicted its result.
 
 ### Detection in the loop
 
@@ -225,9 +238,11 @@ overwrite the pretrained notion of a person. Nothing in the recipe
 protected it: no real examples, no frozen layers, no reduced learning
 rate.
 
-**Why camera realism did not help.** The embedding check shows the
-domains differ in content, not in sensor character. Noise and compression
-change pixels; they do not add long grass or a fourth body shape.
+**Why neither randomization nor camera realism helped.** The embedding
+check shows the domains differ in content, not in colour, lighting or
+sensor character. Randomization varies parameters of the same content;
+noise and compression change pixels. Neither adds long grass that partly
+covers a person, or a fourth body shape.
 
 **Where the detector fails in flight.** All six closed-loop misses were in
 forest-edge worlds and five were people placed under canopies. Every one
@@ -267,9 +282,12 @@ mission is unaffected because identity is decided from ground position.
 - **Cut-offs were chosen on simulated validation data,** which is the
   wrong domain for tuning a real-image operating point. It affects the
   precision and recall columns, not mAP.
-- **Planned and not done at the time of writing:** domain randomization
-  (v2), a mission agent driven by a language model (the evaluation harness
-  exists; no model call was made), and weather.
+- **v2 is not a clean ablation of v1.** Its 6,000 frames come from 30
+  flights, v1's from 54. Randomization was also never combined with real
+  data.
+- **Planned and not done at the time of writing:** a mission agent driven
+  by a language model (the evaluation harness exists; no model call was
+  made), and weather.
 - **Small counts in the closed-loop breakdowns:** 9 to 34 people per cell.
 
 ## 7. What I would do next
@@ -278,8 +296,10 @@ mission is unaffected because identity is decided from ground position.
    learning rate, and see whether simulation-only training then keeps
    v0's real score.
 2. Test v4 on a second real dataset from different footage.
-3. Widen the simulated content (more bodies, vegetation, terrain) before
+3. Combine randomization with the real images (v2 + v4) to see whether
+   it adds anything once real examples are present.
+4. Widen the simulated content (more bodies, vegetation, terrain) before
    spending more on rendering fidelity, since content is where the domains
    differ.
-4. Add a low second pass over tree cover to the mission, since that is
+5. Add a low second pass over tree cover to the mission, since that is
    where every miss occurred.
