@@ -8,6 +8,7 @@ intervals. Gap = simulated minus real: the smaller, the better the transfer.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | v0 | reference: COCO-pretrained YOLO11n, no training on our data | 0.453 (0.440 to 0.465) | 0.591 (0.574 to 0.607) | -0.138 (-0.159 to -0.117) | 0.65 / 0.45 | 0.83 / 0.51 | 0 | `none (no training)` | `0417fe7` |
 | v1 | baseline: simulation only | 0.947 (0.944 to 0.953) | 0.014 (0.009 to 0.019) | 0.933 (0.927 to 0.941) | 0.98 / 0.93 | 0.19 / 0.01 | 5999 | `d741bdbb19fbe45d` | `0417fe7` |
+| v3 | v1 + camera realism on training images (noise, blur, JPEG, exposure) | 0.941 (0.935 to 0.945) | 0.020 (0.017 to 0.023) | 0.921 (0.913 to 0.925) | 0.98 / 0.92 | 0.13 / 0.02 | 5999 | `86479461bb4f3bb7` | `e316ec6` |
 
 Precision and recall are at the confidence cut-off chosen on the validation set
 (column `confidence` in the CSV), IoU 0.5.

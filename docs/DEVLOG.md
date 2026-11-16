@@ -563,3 +563,35 @@ as CLIP is concerned, which is a warning that v3 alone may not help.
 - `sim-test` contains near-duplicates on purpose, so its interval is
   narrower than the number of independent scenes (15 episodes) justifies.
 - SARD's `difficult` boxes are counted as ordinary people.
+
+## Phase 3C: closing the gap, one change per version (2026-11-16)
+
+The plan orders the versions v2 (domain randomization), v3 (camera
+realism), v4 (+5 % real). v2 needs new episodes recorded, which takes
+hours of simulator time, so tonight's order is v3, then v4. Each row says
+what it was built on.
+
+### v3 = v1 + camera realism
+
+- Export `v3-6k`, hash `86479461bb4f3bb7`: the same 5,999 frames as v1, each
+  degraded once (exposure 0.8 to 1.2, gamma 0.85 to 1.15, blur on half of
+  them up to 1.2 px, noise sigma 1 to 6, JPEG quality 35 to 85), seeded by
+  file name. Validation images are untouched.
+- Same network, epochs and settings as v1. 149.8 minutes, commit 06d5f53.
+
+| Version | Sim-test mAP@0.5 | SARD mAP@0.5 | Gap |
+| --- | --- | --- | --- |
+| v1 | 0.947 (0.944 to 0.953) | 0.014 (0.009 to 0.019) | 0.933 |
+| v3 | 0.941 (0.935 to 0.945) | 0.020 (0.017 to 0.023) | 0.921 (0.913 to 0.925) |
+
+**Camera realism did almost nothing.** The real score went from 0.014 to
+0.020. The intervals just fail to overlap, so the change is probably real,
+but it is useless in practice: recall on SARD is still 1.6 %. The
+simulated score dropped slightly, as expected when training images are
+made harder.
+
+This matches what the embedding check said beforehand: degraded simulated
+frames were still 100 % separable from real ones. The difference between
+these worlds and SARD is not sensor noise. It is content: three body
+meshes on flat textured ground against real people in long grass, on
+stone and on roads.
