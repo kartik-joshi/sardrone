@@ -1,0 +1,3 @@
+version,change,train_hash,train_images,commit,confidence,sim_map50,sim_map50_low,sim_map50_high,sim_map50_95,sim_precision,sim_recall,real_map50,real_map50_low,real_map50_high,real_map50_95,real_precision,real_recall,gap_map50,gap_map50_low,gap_map50_high,sim_images,real_images,evaluated_utc
+v0,"reference: COCO-pretrained YOLO11n, no training on our data",none (no training),0,0417fe7,0.0942,0.4526,0.4402,0.4647,0.2671,0.6456,0.4525,0.591,0.5744,0.6066,0.3008,0.83,0.5067,-0.1384,-0.1586,-0.1169,7453,1387,2026-11-16T08:32:17Z
+v1,baseline: simulation only,d741bdbb19fbe45d,5999,0417fe7,0.2721,0.9468,0.9438,0.9529,0.7229,0.9783,0.9291,0.0138,0.0093,0.019,0.0071,0.1927,0.0149,0.933,0.9272,0.9412,7453,1387,2026-11-16T08:26:10Z
