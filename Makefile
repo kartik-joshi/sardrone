@@ -20,6 +20,8 @@ MATRIX    ?= configs/pilot.yaml
 ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
+# Who looks for people: `oracle` reads ground truth; a model version (v4) looks at the images.
+DETECTOR  ?= oracle
 
 .PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap pipeline agent-eval
 
@@ -106,7 +108,7 @@ record-world: $(VENV)/.dev $(VENV)/.fly
 # Lawnmower search with confirm / report / return home. Needs `make sim-world`.
 search: $(VENV)/.dev $(VENV)/.fly
 	SARDRONE_GZ_PYTHON=$(PX4_DIR)/Tools/setup/macos/.pixi/envs/default/bin/python \
-	  $(PY) -m sardrone.mission.search --world-dir $(WORLD_DIR)
+	  $(PY) -m sardrone.mission.search --world-dir $(WORLD_DIR) --detector $(DETECTOR)
 
 # The same mission with a fake drone: no simulator, finishes in seconds.
 search-fake: world

@@ -707,3 +707,97 @@ not report), m12 ("the field to the north") and m20 ("do not launch").
 - One run per mission. With a real model at temperature 0 and a fixed seed
   the plan is still to repeat runs, since providers do not guarantee
   identical output.
+
+## Phase 3D: detection in the loop and object memory (2026-11-16)
+
+### Done
+
+- The search mission runs its detector once per camera frame and feeds the
+  boxes to a tracker (a constant-velocity Kalman filter per box, Hungarian
+  matching, coasting for up to 15 frames). It acts only on tracks seen
+  three times.
+- `YoloDetector` puts a trained model behind the oracle's interface. It
+  gives no identities: targets are told apart by ground position (4 m),
+  and a report counts as a find only if a true person is within 3 m.
+- `/detections` (ImageAnnotations with track labels) on every frame;
+  events `target_acquired` and `target_lost`.
+- `mission_metrics` in every sidecar; `sardrone.mission.report` tabulates
+  a folder of episodes.
+- `make search --detector v4`, `sardrone.batch --detector v4 --prefix test-`.
+
+### Result: 15 sim-test worlds, closed loop, detector v4 (cut-off 0.378)
+
+PX4 SITL, 93.5 minutes for 14 flights (the first was flown beforehand).
+Full table: `docs/results/closed_loop_v4.md`. For comparison, the oracle
+found 45 of 45 on the same worlds.
+
+| | Closed loop (v4) | Oracle |
+| --- | --- | --- |
+| People found | 39 of 45 (86.7 %) | 45 of 45 |
+| Episodes with everyone found | 10 of 15 | 15 of 15 |
+| False reports (nobody there) | 0 | 0 |
+| False alarms rejected by the orbit | 9 | 0 |
+| Missed rescues (visible in images, never reported) | 6 | 0 |
+| Searches flown to the end | 15 of 15 | 15 of 15 |
+| Mean time to first find | 56 s | |
+| Mean position error of reports | 0.45 m | |
+| Mean cross-track error | 0.03 m | |
+| Tracker ADE, all frames / while coasting | 5.6 px / 24.8 px | |
+| Mean flight time | 344 s | 260 s |
+
+Where the six misses are:
+
+| | Found |
+| --- | --- |
+| Occlusion none / partial | 33 of 34 / 6 of 11 |
+| Altitude 15 m / 25 m / 40 m | 14 of 14 / 14 of 17 / 11 of 14 |
+| Meadow / park / forest edge | 15 of 15 / 15 of 15 / 9 of 15 |
+| Noon / golden hour / dusk | 7 of 9 / 16 of 17 / 16 of 19 |
+
+### What this means
+
+- **All six misses are in forest-edge worlds, five of them people under
+  trees.** In the open the closed loop found 33 of 34. That is the same
+  weakness the auto-labeller had, and the same one the label statistics
+  predicted: under a canopy a person is a few visible pixels.
+- **All six were "missed rescues":** the simulator's label sensor did see
+  them in at least 10 frames, so they were in view, but the detector never
+  held them long enough to trigger a confirmation. More coverage would not
+  have helped; a better detector, a lower altitude or a second pass would.
+- **Nothing was reported that was not there.** Nine times the detector
+  held a false track for three frames and the drone flew a confirmation
+  orbit; nine times the orbit rejected it. That is the orbit doing its
+  job, and it is not free: closed-loop flights were a third longer than
+  the oracle's.
+- **Lower is better for finding, and costs time.** 14 of 14 at 15 m
+  against 11 of 14 at 40 m, on few episodes.
+
+### What broke, and what was learned
+
+- **Overlap-based matching fragments small objects.** The first
+  closed-loop flight found 3 of 3 people but as 70 separate tracks. A
+  30 px box often does not overlap its own position one frame earlier when
+  the drone turns. Matching by centre distance, gated at 1.5 body-lengths,
+  cut that to 47, with the same mission result. It is still fragmented:
+  people leave and re-enter the picture, and nothing compensates for the
+  drone's own motion. The mission is not affected because identity is
+  decided by ground position, not by track id.
+- **A one-frame glimpse should not move a drone.** With the tracker's
+  three-hit rule a single false box no longer causes a detour; a test
+  changed from "false alarm" to "nothing happens" to reflect that.
+- **The first closed-loop flight worked first time.** The fake-drone tests
+  with a detector stripped of identities, plus one with a persistent false
+  positive, had already exercised every path.
+
+### How far to trust this
+
+- 15 flights, one per world, one run each. The breakdowns above have
+  between 9 and 34 people per cell; they point in a direction and prove
+  little.
+- The detector was trained on worlds built by the same generator as the
+  test worlds, with the same three body meshes. This is closed-loop
+  performance in simulation, not a claim about real flights.
+- "Found" needs a report within 3 m of a true person. Position error
+  includes PX4's pose error here, unlike with the oracle.
+- The tracker ADE compares the tracker's one-frame-ahead prediction with
+  the simulator's label box centre, matched by nearest box.

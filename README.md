@@ -244,6 +244,36 @@ classifier on CLIP embeddings tells them apart 100 % of the time.
 
 The following versions each change one thing to close the gap.
 
+## Detection in the loop (Phase 3D)
+
+```bash
+make sim-world ROW=test-001     # then, in another terminal:
+```
+
+```bash
+make search ROW=test-001 DETECTOR=v4
+```
+
+With `DETECTOR=v4` the mission no longer reads ground truth. The trained
+model looks at each camera frame, a tracker (Kalman filter plus matching)
+keeps identities through missed frames, and the drone acts only on tracks
+it has seen three times. Ground truth is used afterwards, to score.
+
+Fifteen sim-test worlds flown closed loop
+([table](docs/results/closed_loop_v4.md)):
+
+| | Closed loop (v4) | Oracle |
+| --- | --- | --- |
+| People found | 39 of 45 | 45 of 45 |
+| False reports | 0 | 0 |
+| False alarms rejected by the confirmation orbit | 9 | 0 |
+| Missed rescues (in view, never reported) | 6 | 0 |
+| Mean flight time | 344 s | 260 s |
+
+All six misses were in forest-edge worlds, five of them people under
+trees; in the open it found 33 of 34. Nothing was reported that was not
+there: nine times the detector held a false track and the orbit rejected it.
+
 ## What is verified, and what is not
 
 | Part | Status |
@@ -263,7 +293,7 @@ The following versions each change one thing to close the gap.
 | Auto-labeller | Scoring code tested against numbers worked out by hand; one full run on 4,105 frames |
 | Metrics | AP, precision, recall and bootstrap code tested against hand-worked numbers, and it reproduces FiftyOne's mAP on 4,105 frames |
 | Detector v1 | Trained once (10 epochs, 6,000-frame sample). Scores come from `make evaluate`; the real-image pipeline was cross-checked with the untrained network |
-| Person detection in flight | Not implemented. The `person_seen` event is still scripted from the drone's position; the default Gazebo world has no person in it |
+| Detection in flight | 15 closed-loop PX4 flights with detector v4; tracker and identity logic tested with the fake drone, including a persistent false positive |
 | Gazebo window (GUI) | Not tried: it needs XQuartz, which needs an admin password to install |
 
 Numbers from the recorded real flight (`flight-0001`, 61.6 s): cruise height
