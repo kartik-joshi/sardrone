@@ -40,10 +40,11 @@ DUPLICATE_TAG = "duplicate"
 
 # Cosine distance (1 - cosine similarity; 0 = identical direction) below
 # which two frames of one episode count as the same picture. Chosen from a
-# sweep on the pilot data (docs/DEVLOG.md, Phase 2E): the largest value at
-# which under 1 % of the removed frames show a different number of people
-# than the frame kept in their place.
-DUPLICATE_THRESHOLD = 0.006
+# sweep (docs/DEVLOG.md): the largest value at which under 1 % of the
+# removed frames show a different number of people than the frame kept in
+# their place. On the pilot data that was 0.006; on the v1 data 0.006 gave
+# 1.8 %, and the rule gives 0.004 (0.7 %).
+DUPLICATE_THRESHOLD = 0.004
 SWEEP_THRESHOLDS = (0.002, 0.003, 0.004, 0.006, 0.01, 0.015)
 
 SMALL_BOX_PX = 16.0  # "small" person: longer side of the box below this
