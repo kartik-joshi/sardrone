@@ -21,7 +21,7 @@ ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -141,6 +141,17 @@ curate: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
 # Open-vocabulary auto-labels, scored against ground truth (about 35 min).
 autolabel: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
 	$(PY) -m sardrone.fo.autolabel
+
+# ---- training and evaluation (Phase 3) ---------------------------------------
+
+# Load the real test set from data/real/sard/SARD into FiftyOne.
+sard: $(VENV)/.dev $(VENV)/.view
+	$(PY) -m sardrone.fo.real
+
+# Saved views train-v1 / val-v1 -> a YOLO dataset in runs/exports/$(EXPORT).
+EXPORT ?= v1
+export: $(VENV)/.dev $(VENV)/.view
+	$(PY) -m sardrone.train.export --name $(EXPORT)
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load
