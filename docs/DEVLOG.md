@@ -644,3 +644,66 @@ What v4 is, and is not:
 - 5 % is of the 6,000-frame sample, which is 300 images, or half of the
   pool. The plan's "+5 %" of the full training set would be 1,233 images,
   more than the pool holds.
+
+## Phase 3E: workflow and retraining gate (2026-11-16)
+
+- `sardrone/pipeline.py`, `make pipeline`: ingest and curate always run;
+  a gate then allows export, train and evaluate only if `sar-hard-cases`
+  has grown by at least 200 frames since the last training. Dry run by
+  default. The state is `runs/pipeline_state.json`.
+- Recorded today's state for v4: 21,701 hard frames. A dry run then
+  reports 0 new hard frames and skips the three expensive stages.
+- No Airflow. `docs/WORKFLOW.md` gives the reasons (one machine, fixed
+  order, dependency conflicts) and a DAG sketch that has not been run.
+- Not done: the plan's optional S3 storage and container evaluation job.
+- Not tried: `make pipeline RUN=1` end to end. Its stages have each been
+  run by hand; the gate logic is covered by tests with a stand-in runner.
+
+## Phase 4A: mission agent (2026-11-16)
+
+### Done
+
+- Six tools as JSON schemas; a deterministic mission simulator; the agent
+  loop with a full transcript; a Cohere back-end, a rule-based baseline
+  and a scripted model; 20 written missions with checks; `make agent-eval`.
+- The Cohere adapter was written against the installed SDK (cohere 7.3.1):
+  `ClientV2.chat(model, messages, tools, temperature, seed)`, tool calls at
+  `response.message.tool_calls[i].function.{name, arguments}`, token counts
+  at `response.usage.tokens`.
+
+### Result so far (no language model)
+
+| Model | Missions succeeded | Valid tool calls | Mean steps |
+| --- | --- | --- | --- |
+| rule-based keywords | 9 of 20 (45 %) | 100 % | 10.5 |
+| reference policy, told the answers | 20 of 20 | 100 % | (test only) |
+
+The baseline fails m04 (altitude written as "15 metres"), m05 and m14
+(two areas in order), m06, m08, m11, m15, m17 (who to report needs
+understanding: a child not an adult, lying not standing, two colours,
+"except people in black", white shirt AND sitting), m07 (confirm but do
+not report), m12 ("the field to the north") and m20 ("do not launch").
+
+### What this means
+
+- The evaluation discriminates: nine missions are solvable by keyword
+  matching, eleven are not. A language model has to earn its place on
+  those eleven.
+- The reference policy passing all 20 shows that every mission can be
+  solved within the battery budget and that the scorer accepts a correct
+  run. Without that check, a mission the simulator made impossible would
+  look like a model failure.
+
+### Not done
+
+- **No Cohere call has been made.** It needs `COHERE_API_KEY` and
+  `COHERE_MODEL` in `.env`, and it costs money. The adapter is therefore
+  untested against the live API.
+- Cost is only computed from prices given on the command line. None is
+  assumed.
+- The agent acts on the simulator, not the drone. Its decisions are passed
+  to an `on_decision` hook, which is where writing to `/events` would go;
+  that is not wired to a real flight.
+- One run per mission. With a real model at temperature 0 and a fixed seed
+  the plan is still to repeat runs, since providers do not guarantee
+  identical output.
