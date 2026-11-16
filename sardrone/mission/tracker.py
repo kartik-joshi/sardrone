@@ -98,6 +98,8 @@ class Track:
     hits: int = 1  # frames with a matching detection
     age: int = 1  # frames since the track was created
     misses: int = 0  # frames in a row WITHOUT a detection (coasting)
+    predicted: Box | None = None  # where the motion model expected it this frame, before looking
+    detection: int | None = None  # index of the detection matched this frame (None while coasting)
     history: list = field(default_factory=list)  # (frame index, box, "detected" | "coasted")
 
     @property
@@ -150,6 +152,8 @@ class Tracker:
         """Advance one frame. Returns the tracks that are currently confirmed
         (seen often enough), including those that are coasting."""
         predicted = [track.filter.predict() for track in self.tracks]
+        for track, box in zip(self.tracks, predicted):
+            track.predicted, track.detection = box, None
         pairs = associate(predicted, detections, self.min_iou)
         matched_tracks = {t for t, _ in pairs}
         matched_detections = {d for _, d in pairs}
@@ -159,13 +163,14 @@ class Tracker:
             track.filter.update(detections[detection_index])
             track.hits += 1
             track.misses = 0
+            track.detection = detection_index
         for index, track in enumerate(self.tracks):
             track.age += 1
             if index not in matched_tracks:
                 track.misses += 1
         for index, box in enumerate(detections):
             if index not in matched_detections:
-                self.tracks.append(Track(self._next_id, BoxFilter(box)))
+                self.tracks.append(Track(self._next_id, BoxFilter(box), detection=index))
                 self._next_id += 1
 
         kept = []

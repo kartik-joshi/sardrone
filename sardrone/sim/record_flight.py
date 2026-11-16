@@ -84,6 +84,7 @@ class FlightRecorder:
             person["label"]: person["id"] for person in self.ground_truth_people if "label" in person
         }
         self._samples = 0
+        self.last_jpeg: bytes | None = None
         self.drone = drone
         self.episode = episode
         self.camera = camera
@@ -145,7 +146,8 @@ class FlightRecorder:
         self.state, self.now_ns = state, wall_ns
         person_in_view = self._person_in_view(state)
         self._update_synthetic_camera(state, person_in_view)
-        episode.log_image(wall_ns, self.camera.read())
+        self.last_jpeg = self.camera.read()  # kept for a detector to look at
+        episode.log_image(wall_ns, self.last_jpeg)
         # Exact labels for exactly this picture, when the camera supplies them
         # (the Gazebo bounding-box sensor does; generated test images do not).
         label_boxes = getattr(self.camera, "last_boxes", None)

@@ -41,13 +41,17 @@ from sardrone.mcap.episode_writer import (
     EVENT_SEARCH_COMPLETE,
     EVENT_STATE,
     EVENT_TAKEOFF,
+    EVENT_TARGET_ACQUIRED,
+    EVENT_TARGET_LOST,
     EVENT_WAYPOINT_REACHED,
     EpisodeMeta,
     EpisodeWriter,
 )
 from sardrone.mcap.geo import enu_offset_to_latlon
 from sardrone.mcap.timeutil import NS_PER_SEC
-from sardrone.mission.coverage import CoveragePlan, Point, lawnmower
+from sardrone.mission.coverage import CoveragePlan, Point, covered_fraction, lawnmower
+from sardrone.mission.metrics import cte_summary
+from sardrone.mission.tracker import Tracker, centre
 from sardrone.mission.footprint import footprint
 from sardrone.mission.oracle import Detector, OracleDetector, Sighting
 from sardrone.mission.projection import CameraModel, DronePose
@@ -93,6 +97,17 @@ class SearchConfig:
     confirm_min_frames: int = 10  # frames with the target in view, to accept it
     retry_after_s: float = 30.0  # ignore a rejected sighting for this long
     battery_rtl_percent: float = 30.0
+    # Tracker (object memory). A sighting is acted on only once its track
+    # has been seen `track_min_hits` times; a track may coast unseen for
+    # `track_max_age` frames (at 10 Hz, 15 frames = 1.5 s).
+    track_min_hits: int = 3
+    track_max_age: int = 15
+    # Two position estimates closer than this are the same person. Used
+    # when the detector gives no identity (a real detector never does).
+    same_person_radius_m: float = 4.0
+    # A report within this distance of a true person counts as finding them.
+    match_radius_m: float = 3.0
+    missed_rescue_min_frames: int = 10  # "was visible": in at least this many frames
     rate_hz: float = 10.0
     reach_tolerance_m: float = 1.0
     arrive_speed_m_s: float = 0.5
@@ -150,6 +165,19 @@ class SearchRecorder(FlightRecorder):
         self.orbits: list[dict] = []  # centre and radius of each confirmation circle
         self.confirmed: set[str] = set()
         self._rejected_until: dict[str, int] = {}
+        # Perception, refreshed once per camera frame by _sample().
+        self.tracker = Tracker(max_age=config.track_max_age, min_hits=config.track_min_hits)
+        self.sightings: list[Sighting] = []  # what the detector saw in the latest frame
+        self._actionable: list[Sighting] = []  # ... of which belong to a believed track
+        self._spots: dict[str, tuple[float, float]] = {}  # key -> (east, north) of id-less targets
+        self._acquired: set[int] = set()
+        self._lost_seen = 0
+        # Bookkeeping for the mission metrics.
+        self.visible_frames: dict[str, int] = {}  # person id -> frames with a ground-truth box
+        self.false_alarms = 0
+        self._search_path: list[tuple[float, float]] = []  # positions flown while searching
+        self._lanes_done = 0
+        self._ade = {"all": [0.0, 0], "coasting": [0.0, 0]}  # sum of pixel errors, count
         self._home_latlon: tuple[float, float] = (0.0, 0.0)
         self._down0 = 0.0
         self._yaw_deg = 0.0
@@ -218,16 +246,94 @@ class SearchRecorder(FlightRecorder):
     def _battery_low(self) -> bool:
         return self.state.battery_percent <= self.config.battery_rtl_percent
 
+    async def _sample(self) -> None:
+        """One camera frame: record it (as before), then LOOK at it.
+
+        The detector runs exactly once per frame. Its boxes go through the
+        tracker, which turns flickering per-frame boxes into persistent
+        tracks. What the mission later acts on is `self._actionable`: the
+        sightings that belong to a track seen often enough to be believed.
+        """
+        await super()._sample()
+        pose = DronePose.from_state(self.state)
+        self.sightings = [
+            s for s in self.detector.detect(pose, self.last_jpeg) if s.ground_east_north is not None
+        ]
+        boxes = [(s.bbox.x0, s.bbox.y0, s.bbox.x1, s.bbox.y1) for s in self.sightings]
+        tracks = self.tracker.step(boxes)
+        self._actionable = [self.sightings[t.detection] for t in tracks if t.detection is not None]
+
+        self.episode.log_detections(
+            self.now_ns,
+            [
+                {"id": f"track {t.id}" + (" (coasting)" if t.coasting else ""),
+                 "x0": t.box[0], "y0": t.box[1], "x1": t.box[2], "y1": t.box[3]}
+                for t in tracks
+            ],
+        )  # fmt: skip
+        for track in tracks:
+            if track.id not in self._acquired:
+                self._acquired.add(track.id)
+                self._event(EVENT_TARGET_ACQUIRED, f"track {track.id}")
+        for track in self.tracker.lost[self._lost_seen :]:
+            if track.id in self._acquired:
+                self._event(EVENT_TARGET_LOST, f"track {track.id} after {track.age} frames")
+        self._lost_seen = len(self.tracker.lost)
+        self._score_frame(tracks)
+        if self.mission_state == SEARCH:
+            self._search_path.append((self.state.north_m, self.state.east_m))
+
+    def _score_frame(self, tracks) -> None:
+        """Compare this frame's tracks with the simulator's label boxes,
+        when the camera supplies them (the Gazebo camera does)."""
+        truth_boxes = getattr(self.camera, "last_boxes", None)
+        if truth_boxes is None:
+            return
+        centres = []
+        for box in truth_boxes:
+            if box.width < 1.0 or box.height < 1.0:
+                continue
+            person = self._label_ids.get(box.label, f"label_{box.label}")
+            self.visible_frames[person] = self.visible_frames.get(person, 0) + 1
+            centres.append((((box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2), max(box.width, box.height)))
+        for track in tracks:
+            if track.predicted is None or not centres:
+                continue
+            # ADE uses the PREDICTION (made before looking at this frame):
+            # that is the tracker's memory at work, not the detector's box.
+            guess = centre(track.predicted)
+            (true_centre, size) = min(centres, key=lambda item: math.dist(guess, item[0]))
+            error = math.dist(guess, true_centre)
+            if error <= max(40.0, 2.0 * size):  # farther away: this track is not that person
+                for bucket in ("all", "coasting") if track.coasting else ("all",):
+                    self._ade[bucket][0] += error
+                    self._ade[bucket][1] += 1
+
+    def _key(self, sighting: Sighting) -> str:
+        """Who is this? The oracle says; for a real detector the answer is
+        "whoever we already know of near that spot", else a new target."""
+        if sighting.person_id:
+            return sighting.person_id
+        east, north = sighting.ground_east_north
+        for key, (known_east, known_north) in self._spots.items():
+            if math.hypot(east - known_east, north - known_north) <= self.config.same_person_radius_m:
+                return key
+        return f"target_{len(self._spots) + 1}"
+
+    def _same_target(self, sighting: Sighting, key: str, east: float, north: float) -> bool:
+        if sighting.person_id:
+            return sighting.person_id == key
+        here = sighting.ground_east_north
+        return math.hypot(here[0] - east, here[1] - north) <= self.config.same_person_radius_m
+
     def _new_sightings(self) -> list[Sighting]:
-        """Sightings of people not yet confirmed (and not recently rejected)."""
-        sightings = self.detector.detect(DronePose.from_state(self.state))
+        """Believed sightings of people not yet reported (and not recently rejected)."""
         fresh = []
-        for sighting in sightings:
-            key = sighting.person_id or "unknown"
+        for sighting in self._actionable:
+            key = self._key(sighting)
             if key in self.confirmed or self.now_ns < self._rejected_until.get(key, 0):
                 continue
-            if sighting.ground_east_north is not None:
-                fresh.append(sighting)
+            fresh.append(sighting)
         return fresh
 
     def _watch_search(self):
@@ -256,7 +362,7 @@ class SearchRecorder(FlightRecorder):
         """
         config = self.config
         east, north = sighting.ground_east_north
-        key = sighting.person_id or "unknown"
+        key = self._key(sighting)
         down = self._down_for(config.confirm_altitude_m)
         height_above_ground = config.confirm_altitude_m - self.ground_z
         radius = height_above_ground / math.tan(math.radians(max(self.model.pitch_deg, 20.0)))
@@ -283,8 +389,9 @@ class SearchRecorder(FlightRecorder):
             await self.drone.goto_ned(point[0], point[1], down, self._yaw_deg)
             await self._sleep(period)
             await self._sample()
-            for seen in self.detector.detect(DronePose.from_state(self.state)):
-                if (seen.person_id or "unknown") == key and seen.ground_east_north is not None:
+            # _sample() has just run the detector on this frame.
+            for seen in self.sightings:
+                if self._same_target(seen, key, east, north):
                     frames += 1
                     estimates.append(seen.ground_east_north)
                     break
@@ -297,11 +404,34 @@ class SearchRecorder(FlightRecorder):
         mean = (sum(e[0] for e in estimates) / len(estimates), sum(e[1] for e in estimates) / len(estimates))
         return frames >= config.confirm_min_frames, mean, frames
 
-    def _report(self, sighting: Sighting, estimate: tuple[float, float], frames: int) -> None:
+    def _match_truth(self, sighting: Sighting, east: float, north: float) -> tuple[str | None, float | None]:
+        """Which true person does a report belong to, and how far off is it?
+
+        The oracle names the person. Otherwise it is the nearest true
+        person within `match_radius_m` who has not been reported yet; if
+        there is none, the report is a FALSE report (nobody is there).
+        """
+        already = {report["matched_person"] for report in self.reports}
+        if sighting.person_id and sighting.person_id in self.truth:
+            centre_ = self.truth[sighting.person_id]["box_centre"]
+            return sighting.person_id, math.hypot(east - centre_[0], north - centre_[1])
+        best, best_distance = None, self.config.match_radius_m
+        for person_id, person in self.truth.items():
+            if person_id in already:
+                continue
+            distance = math.hypot(east - person["box_centre"][0], north - person["box_centre"][1])
+            if distance <= best_distance:
+                best, best_distance = person_id, distance
+        return best, (best_distance if best else None)
+
+    def _report(self, sighting: Sighting, estimate: tuple[float, float], frames: int, key: str) -> None:
         east, north = estimate
         latitude, longitude = enu_offset_to_latlon(*self._home_latlon, east, north)
+        matched, error = self._match_truth(sighting, east, north)
         report = {
             "person_id": sighting.person_id,
+            "target": key,
+            "matched_person": matched,  # None = nobody is really there
             "east_m": round(east, 2),
             "north_m": round(north, 2),
             "latitude_deg": round(latitude, 7),
@@ -309,22 +439,21 @@ class SearchRecorder(FlightRecorder):
             "frames_in_view": frames,
             "time_s": round((self.now_ns - self._start_wall_ns) / NS_PER_SEC, 1),
         }
-        truth = self.truth.get(sighting.person_id or "")
-        if truth is not None:
-            true_east, true_north = truth["box_centre"][0], truth["box_centre"][1]
-            report["error_m"] = round(math.hypot(east - true_east, north - true_north), 2)
+        if error is not None:
+            report["error_m"] = round(error, 2)
         self.reports.append(report)
-        self.confirmed.add(sighting.person_id or "unknown")
-        self.episode.meta.people_found += 1
-        error = f", error {report['error_m']:.2f} m" if "error_m" in report else ""
-        self._event(
-            EVENT_PERSON_REPORTED,
-            f"{sighting.person_id or 'person'} at {latitude:.6f}, {longitude:.6f}{error}",
-        )
+        self.confirmed.add(key)
+        self._spots[key] = (east, north)
+        if matched:
+            self.episode.meta.people_found += 1
+        detail = f", error {error:.2f} m" if error is not None else ", NOBODY THERE" if self.truth else ""
+        self._event(EVENT_PERSON_REPORTED, f"{sighting.person_id or key} at {latitude:.6f}, {longitude:.6f}{detail}")
 
     async def _handle_sighting(self, sighting: Sighting) -> None:
         """CONFIRM, then REPORT or reject, then RESUME back to the lane."""
-        name = sighting.person_id or "person"
+        key = self._key(sighting)
+        name = sighting.person_id or key
+        self._spots.setdefault(key, sighting.ground_east_north)
         resume_at = self._position()
         resume_yaw = self._yaw_deg
         size = max(sighting.bbox.width, sighting.bbox.height)
@@ -334,11 +463,12 @@ class SearchRecorder(FlightRecorder):
         if confirmed:
             self._event(EVENT_PERSON_CONFIRMED, f"{name} in view for {frames} frames")
             self._enter(REPORT, name)
-            self._report(sighting, estimate, frames)
+            self._report(sighting, estimate, frames, key)
             self._enter(RESUME, "reported")
         else:
             until = self.now_ns + int(self.config.retry_after_s * NS_PER_SEC)
-            self._rejected_until[sighting.person_id or "unknown"] = until
+            self._rejected_until[key] = until
+            self.false_alarms += 1
             self._event(EVENT_FALSE_ALARM, f"{name} in view for only {frames} frames")
             self._enter(RESUME, "not confirmed")
         await self._fly_line(
@@ -374,6 +504,7 @@ class SearchRecorder(FlightRecorder):
             lambda s: s.height_m - (-self._down0) >= config.altitude_m - 0.5, "reach takeoff altitude"
         )
 
+        self._planned_path = [home] + [(w.north_m, w.east_m) for w in self.coverage.waypoints]
         self._enter(SEARCH, f"{self.coverage.lanes} lanes, {self.coverage.spacing_m:.0f} m apart")
         reason = "search complete"
         index = 0
@@ -395,6 +526,8 @@ class SearchRecorder(FlightRecorder):
             )
             if interruption is None:
                 self._event(EVENT_WAYPOINT_REACHED, f"lane {waypoint.lane} {waypoint.kind}")
+                if waypoint.kind == "lane_end":
+                    self._lanes_done += 1
                 index += 1
                 continue
             kind, sighting = interruption
@@ -440,7 +573,55 @@ class SearchRecorder(FlightRecorder):
             },
             "transitions": [state for state, _ in self.transitions],
             "reports": self.reports,
+            "mission_metrics": self.mission_metrics(),
         }  # fmt: skip
+
+    def mission_metrics(self) -> dict:
+        """How the mission went, as numbers (see sardrone/mission/metrics.py).
+
+        A value of None means "not measurable in this run", for example
+        missed rescues when the camera supplies no ground-truth boxes.
+        """
+        config, coverage = self.config, self.coverage
+        found = {r["matched_person"] for r in self.reports if r["matched_person"]}
+        true_reports = [r for r in self.reports if r["matched_person"]]
+        missed = sorted(set(self.truth) - found)
+        missed_rescues = None
+        if self.visible_frames or getattr(self.camera, "last_boxes", None) is not None:
+            missed_rescues = sorted(
+                p for p in missed if self.visible_frames.get(p, 0) >= config.missed_rescue_min_frames
+            )
+        coverage_percent = None
+        if coverage is not None and coverage.lanes:
+            coverage_percent = round(
+                100.0 * covered_fraction(self.polygon, coverage) * self._lanes_done / coverage.lanes, 1
+            )
+        cte = None
+        if coverage is not None and len(self._search_path) > 1:
+            # Detours to confirm a sighting are flown in other states, so
+            # what is left is the lanes and the transits between them.
+            cte = cte_summary(self._search_path, getattr(self, "_planned_path", self._search_path))
+        errors = [r["error_m"] for r in true_reports if "error_m" in r]
+
+        def ade(bucket):
+            total, count = self._ade[bucket]
+            return {"mean_px": round(total / count, 2), "samples": count} if count else None
+
+        return {
+            "people_placed": len(self.truth),
+            "people_found": len(found),
+            "missed": missed,
+            "missed_rescues": missed_rescues,  # visible in the images, never reported
+            "false_reports": sum(1 for r in self.reports if not r["matched_person"]),
+            "false_alarms": self.false_alarms,  # sightings the confirmation orbit rejected
+            "time_to_first_find_s": min((r["time_s"] for r in true_reports), default=None),
+            "mean_report_error_m": round(sum(errors) / len(errors), 2) if errors else None,
+            "coverage_percent": coverage_percent,
+            "cross_track_error": cte,
+            "tracker_ade": ade("all"),
+            "tracker_ade_coasting": ade("coasting"),
+            "tracks_started": len(self._acquired),
+        }
 
 
 async def run_search(
@@ -499,6 +680,20 @@ async def run_search(
         await drone.close()
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def scorecard_confidence(version: str) -> float:
+    """The cut-off chosen for this model on validation data (scorecard.csv)."""
+    import csv
+
+    with open(PROJECT_ROOT / "docs" / "results" / "scorecard.csv", newline="") as handle:
+        for row in csv.DictReader(handle):
+            if row["version"] == version:
+                return float(row["confidence"])
+    raise ValueError(f"model {version!r} is not in the scorecard; pass --confidence")
+
+
 def square_polygon(side_m: float) -> list[Point]:
     """A square search area centred on the takeoff point, as (north, east) corners."""
     half = side_m / 2
@@ -522,6 +717,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--battery-rtl", type=float, default=30.0, help="return home at this percent")
     parser.add_argument(
+        "--detector", default="oracle",
+        help="'oracle' (reads ground truth) or a model version under runs/train, e.g. v1",
+    )  # fmt: skip
+    parser.add_argument("--confidence", type=float, help="detector cut-off (default: the one in the scorecard)")
+    parser.add_argument("--device", default="mps")
+    parser.add_argument(
         "--prompt", default="Search the area, confirm and report every person, then return home."
     )
     args = parser.parse_args(argv)
@@ -534,7 +735,8 @@ def main(argv: list[str] | None = None) -> int:
         world=spec["world"], weather=spec["weather"], time_of_day=spec["time_of_day"],
         mission_prompt=args.prompt,
     )  # fmt: skip
-    path = args.out or next_episode_path(prefix=f"{spec['id']}-search" + ("-fake" if args.fake else ""))
+    suffix = "-fake" if args.fake else "" if args.detector == "oracle" else f"-{args.detector}"
+    path = args.out or next_episode_path(prefix=f"{spec['id']}-search{suffix}")
     if path.exists() and not args.overwrite:
         print(f"error: {path} already exists (pass --overwrite to replace it)", file=sys.stderr)
         return 1
@@ -565,12 +767,27 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 1
 
+    detector = None  # run_search falls back to the oracle
+    if args.detector != "oracle":
+        if args.fake:
+            print("error: a trained detector needs real images, not --fake", file=sys.stderr)
+            return 1
+        from sardrone.mission.detector import YoloDetector
+
+        run = json.loads((PROJECT_ROOT / "runs" / "train" / args.detector / "run.json").read_text())
+        confidence = args.confidence if args.confidence is not None else scorecard_confidence(args.detector)
+        detector = YoloDetector(
+            run["weights"], CameraModel.from_source(camera), confidence=confidence,
+            imgsz=run["config"]["imgsz"], device=args.device, ground_z=ground_z, name=f"yolo:{args.detector}",
+        )  # fmt: skip
+        extra = {**extra, "detector_confidence": confidence, "detector_weights_hash": run.get("export_hash")}
+
     started = time.monotonic()
     try:
         episode, recorder = asyncio.run(
             run_search(
                 drone, path, meta, camera=camera, polygon=square_polygon(spec["area_m"]),
-                truth=truth, config=config, ground_z=ground_z, sleep=sleep,
+                truth=truth, config=config, detector=detector, ground_z=ground_z, sleep=sleep,
                 overwrite=args.overwrite, extra_sidecar=extra,
             )  # fmt: skip
         )

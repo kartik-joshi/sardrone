@@ -453,9 +453,13 @@ class GlimpseDetector:
 
 def test_unconfirmed_sighting_is_a_false_alarm_and_search_resumes(tmp_path):
     _, truth = world_people()
-    _, recorder, _, sidecar = search(tmp_path, truth=truth, detector=GlimpseDetector())
+    # track_min_hits=1: act on a single sighting, as a mission without a tracker would.
+    _, recorder, _, sidecar = search(
+        tmp_path, truth=truth, detector=GlimpseDetector(), config=SearchConfig(track_min_hits=1)
+    )
     states = [state for state, _ in recorder.transitions]
     assert states == ["TAKEOFF", "SEARCH", "CONFIRM", "RESUME", "SEARCH", "RTL", "LAND", "DONE"]
+    assert sidecar["mission_metrics"]["false_alarms"] == 1
     assert ("RESUME", "not confirmed") in recorder.transitions
     assert sidecar["event_counts"]["false_alarm"] == 1
     assert "person_reported" not in sidecar["event_counts"]
@@ -498,3 +502,174 @@ def test_confirm_altitude_stays_above_the_trees():
     assert altitude >= tallest + 3.0 or altitude == spec["altitude_m"]
     assert altitude <= spec["altitude_m"]
     assert safe_confirm_altitude({**spec, "trees": []}, 10.0) == 10.0
+
+
+# ---- detection in the loop: tracker, id-less detector, mission metrics --------
+
+
+def test_tracker_filters_a_one_frame_glimpse(tmp_path):
+    """With the tracker's default of three sightings, a single-frame false
+    alarm never interrupts the search: no detour, no wasted battery."""
+    _, truth = world_people()
+    _, recorder, _, sidecar = search(tmp_path, truth=truth, detector=GlimpseDetector())
+    assert [state for state, _ in recorder.transitions] == ["TAKEOFF", "SEARCH", "RTL", "LAND", "DONE"]
+    assert sidecar["mission_metrics"]["false_alarms"] == 0
+    assert "false_alarm" not in sidecar["event_counts"]
+
+
+class NamelessDetector:
+    """The oracle with the names removed, as a real detector would be:
+    boxes and positions, but no idea who anyone is."""
+
+    name = "nameless"
+
+    def __init__(self, oracle, ghost_at=None):
+        self.oracle, self.ghost_at = oracle, ghost_at
+
+    def detect(self, pose, jpeg=None):
+        found = [Sighting(None, s.bbox, s.ground_east_north, 0.8) for s in self.oracle.detect(pose)]
+        if self.ghost_at is not None:
+            # A steady false positive: something on the ground that looks like a person.
+            from sardrone.mission.projection import pixel_to_ground, project
+
+            pixel = project(self.oracle.model, pose, (*self.ghost_at, -0.227))
+            if pixel and 30 < pixel[0] < 1250 and 60 < pixel[1] < 930:
+                box = BBox(pixel[0] - 10, pixel[1] - 30, pixel[0] + 10, pixel[1])
+                ground = pixel_to_ground(self.oracle.model, pose, pixel[0], pixel[1], -0.227)
+                found.append(Sighting(None, box, ground, 0.6))
+        return found
+
+
+def nameless(truth, ghost_at=None):
+    camera = SyntheticCamera(width=1280, height=960, hfov_deg=99.7, pitch_deg=45.0)
+    oracle = OracleDetector(truth, CameraModel.from_source(camera), ground_z=-0.227)
+    return NamelessDetector(oracle, ghost_at)
+
+
+@pytest.fixture(scope="module")
+def nameless_run(tmp_path_factory):
+    _, truth = world_people()
+    return (*search(tmp_path_factory.mktemp("nameless"), truth=truth, detector=nameless(truth)), truth)
+
+
+def test_people_are_found_without_being_told_who_they_are(nameless_run):
+    _, recorder, _, sidecar, truth = nameless_run
+    metrics = sidecar["mission_metrics"]
+    assert metrics["people_placed"] == 3 and metrics["people_found"] == 3
+    assert metrics["missed"] == [] and metrics["false_reports"] == 0
+    assert sidecar["people_found"] == 3 and sidecar["success"] is True
+    # Each report was matched to a different true person, by position alone.
+    assert sorted(r["matched_person"] for r in sidecar["reports"]) == ["person_1", "person_2", "person_3"]
+    assert all(r["person_id"] is None and r["target"].startswith("target_") for r in sidecar["reports"])
+    assert all(r["error_m"] < 1.5 for r in sidecar["reports"])
+    # Nobody is confirmed twice: 3 detours, not more.
+    assert sidecar["event_counts"]["person_reported"] == 3
+    assert [s for s, _ in recorder.transitions].count("CONFIRM") == 3
+
+
+def test_mission_metrics_are_complete_and_sensible(nameless_run):
+    _, recorder, episode, sidecar, _ = nameless_run
+    metrics = sidecar["mission_metrics"]
+    first = min(r["time_s"] for r in sidecar["reports"])
+    assert metrics["time_to_first_find_s"] == first and first > 0
+    assert metrics["coverage_percent"] == 100.0  # both lanes flown to the end
+    cte = metrics["cross_track_error"]
+    # The fake drone follows its setpoints exactly, so it stays on the planned path.
+    assert cte["samples"] > 200 and cte["mean_m"] < 0.5 and cte["max_m"] < 2.0
+    assert metrics["mean_report_error_m"] < 1.5
+    assert metrics["tracks_started"] >= 3
+    # The generated test camera supplies no label boxes, so these cannot be measured.
+    assert metrics["missed_rescues"] is None and metrics["tracker_ade"] is None
+
+
+def test_tracks_are_logged_with_every_frame_and_as_events(nameless_run):
+    from sardrone.mcap.episode_writer import TOPIC_DETECTIONS, TOPIC_IMAGE
+
+    _, _, episode, sidecar, _ = nameless_run
+    assert episode.log_times(TOPIC_DETECTIONS) == episode.log_times(TOPIC_IMAGE)
+    labels = [t.text for message in episode.decoded(TOPIC_DETECTIONS) for t in message.texts]
+    assert any(label == "track 1" for label in labels)
+    assert sidecar["event_counts"]["target_acquired"] >= 3
+    acquired = [m for m in (log.message for log in episode.decoded(TOPIC_EVENTS)) if m.startswith("target_acquired")]
+    assert acquired[0] == "target_acquired: track 1"
+
+
+def test_a_steady_false_positive_is_reported_as_nobody_there(tmp_path):
+    """A detector that keeps seeing a "person" where there is none fools
+    the confirmation orbit too. The mission metrics must show it."""
+    _, truth = world_people()
+    ghost = (5.0, -20.0)  # east, north: nobody stands here
+    assert all(math.hypot(p["box_centre"][0] - ghost[0], p["box_centre"][1] - ghost[1]) > 6 for p in truth)
+    _, recorder, episode, sidecar = search(tmp_path, truth=truth, detector=nameless(truth, ghost))
+    metrics = sidecar["mission_metrics"]
+    assert metrics["false_reports"] == 1
+    false = next(r for r in sidecar["reports"] if r["matched_person"] is None)
+    assert math.hypot(false["east_m"] - ghost[0], false["north_m"] - ghost[1]) < 1.5 and "error_m" not in false
+    assert metrics["people_found"] == 3, "the real people are still found"
+    assert sidecar["people_found"] == 3, "a false report does not count as a person found"
+    assert any("NOBODY THERE" in log.message for log in episode.decoded(TOPIC_EVENTS))
+
+
+def test_partial_search_has_partial_coverage(tmp_path):
+    _, truth = world_people()
+    _, recorder, _, sidecar = search(tmp_path, truth=truth, detector=NoPeopleDetector(), drone=ThirstyDrone())
+    metrics = sidecar["mission_metrics"]
+    assert metrics["coverage_percent"] in (0.0, 50.0)  # battery ran low before both lanes were done
+    assert metrics["people_found"] == 0 and metrics["missed"] == ["person_1", "person_2", "person_3"]
+    assert metrics["time_to_first_find_s"] is None
+
+
+class TruthFeedingDetector:
+    """Wraps a detector and, each frame, puts the simulator's label boxes on
+    the camera, the way the Gazebo camera supplies them in a real flight."""
+
+    def __init__(self, inner, oracle, camera, labels):
+        self.inner, self.oracle, self.camera, self.labels = inner, oracle, camera, labels
+        self.name = inner.name
+
+    def detect(self, pose, jpeg=None):
+        from sardrone.sim.camera import LabelBox
+
+        self.camera.last_boxes = tuple(
+            LabelBox(self.labels[s.person_id], s.bbox.x0, s.bbox.y0, s.bbox.x1, s.bbox.y1)
+            for s in self.oracle.detect(pose)
+        )
+        return self.inner.detect(pose, jpeg)
+
+
+def search_with_labels(tmp_path, truth, inner_factory):
+    drone = FakeDrone()
+    camera = SyntheticCamera(width=1280, height=960, hfov_deg=99.7, pitch_deg=45.0)
+    camera.last_boxes = ()
+    oracle = OracleDetector(truth, CameraModel.from_source(camera), ground_z=-0.227)
+    detector = TruthFeedingDetector(inner_factory(oracle), oracle, camera, {p["id"]: p["label"] for p in truth})
+    meta = EpisodeMeta(world="meadow", weather="clear", time_of_day="noon", mission_prompt="search")
+    path = tmp_path / "search.mcap"
+    asyncio.run(
+        run_search(
+            drone, path, meta, camera=camera, polygon=square_polygon(60.0), truth=truth, detector=detector,
+            ground_z=-0.227, sleep=drone.sleep, start_wall_ns=START_NS,
+        )  # fmt: skip
+    )
+    return json.loads(path.with_suffix(".json").read_text())
+
+
+def test_missed_rescue_means_visible_but_never_reported(tmp_path):
+    _, truth = world_people()
+    # A detector that sees nothing, while the label boxes show all three people.
+    sidecar = search_with_labels(tmp_path, truth, lambda oracle: NoPeopleDetector())
+    metrics = sidecar["mission_metrics"]
+    assert metrics["people_found"] == 0
+    assert metrics["missed_rescues"] == ["person_1", "person_2", "person_3"]
+    assert metrics["tracker_ade"] is None  # no tracks, nothing to score
+
+
+def test_tracker_error_is_measured_against_label_boxes(tmp_path):
+    _, truth = world_people()
+    sidecar = search_with_labels(tmp_path, truth, lambda oracle: NamelessDetector(oracle))
+    metrics = sidecar["mission_metrics"]
+    assert metrics["missed_rescues"] == [] and metrics["people_found"] == 3
+    ade = metrics["tracker_ade"]
+    # The tracker predicts where each box will be one frame ahead; with
+    # exact detections on a smoothly moving drone that is a few pixels off.
+    assert ade["samples"] > 100 and 0.0 < ade["mean_px"] < 15.0

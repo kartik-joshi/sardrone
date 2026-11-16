@@ -31,6 +31,7 @@ class Sighting:
     # be a point about waist-high, and a ray through it lands metres behind
     # the person when seen from a shallow angle.
     ground_east_north: tuple[float, float] | None
+    confidence: float = 1.0  # the oracle is always sure; a real detector is not
 
 
 class Detector(Protocol):

@@ -41,6 +41,7 @@ TOPIC_TELEMETRY = "/telemetry"
 TOPIC_EVENTS = "/events"
 TOPIC_GROUND_TRUTH_PEOPLE = "/ground_truth/people"
 TOPIC_GROUND_TRUTH_BOXES = "/ground_truth/boxes"
+TOPIC_DETECTIONS = "/detections"
 
 # ---- coordinate frame names -------------------------------------------------
 
@@ -78,6 +79,9 @@ EVENT_PERSON_REPORTED = "person_reported"
 EVENT_FALSE_ALARM = "false_alarm"
 EVENT_SEARCH_COMPLETE = "search_complete"
 EVENT_BATTERY_LOW = "battery_low"
+# Detection in the loop (Phase 3D).
+EVENT_TARGET_ACQUIRED = "target_acquired"  # a track was seen often enough to be believed
+EVENT_TARGET_LOST = "target_lost"  # a track was not re-found within the tracker's memory
 KNOWN_EVENTS = (
     EVENT_TAKEOFF,
     EVENT_WAYPOINT_REACHED,
@@ -89,6 +93,8 @@ KNOWN_EVENTS = (
     EVENT_FALSE_ALARM,
     EVENT_SEARCH_COMPLETE,
     EVENT_BATTERY_LOW,
+    EVENT_TARGET_ACQUIRED,
+    EVENT_TARGET_LOST,
 )
 
 # /telemetry has no matching Foxglove schema, so it is our own message type.
@@ -194,6 +200,7 @@ class EpisodeWriter:
         self._events = self._protobuf_channel(TOPIC_EVENTS, msgs.Log)
         self._people = self._protobuf_channel(TOPIC_GROUND_TRUTH_PEOPLE, msgs.SceneUpdate)
         self._boxes = self._protobuf_channel(TOPIC_GROUND_TRUTH_BOXES, msgs.ImageAnnotations)
+        self._detections = self._protobuf_channel(TOPIC_DETECTIONS, msgs.ImageAnnotations)
         self._telemetry = foxglove.Channel(
             TOPIC_TELEMETRY,
             schema=foxglove.Schema(
@@ -411,8 +418,20 @@ class EpisodeWriter:
         draw the labels over the picture. An EMPTY list is meaningful: it
         says "this frame was checked and shows nobody".
         """
+        annotations = self._annotations(wall_ns, boxes, msgs.Color(r=1.0, g=0.0, b=1.0, a=1.0))
+        self._log(self._boxes, TOPIC_GROUND_TRUTH_BOXES, annotations.encode(), wall_ns)
+
+    def log_detections(self, wall_ns: int, boxes: list[dict]) -> None:
+        """What the detector and tracker believe for the frame logged at the
+        same time. Same shape as the ground-truth boxes (`id`, `x0, y0, x1,
+        y1`), drawn in yellow; `id` is the track label, e.g. "track 3" or
+        "track 3 (coasting)". Kept on its own topic so beliefs and truth can
+        be compared frame by frame."""
+        annotations = self._annotations(wall_ns, boxes, msgs.Color(r=1.0, g=0.9, b=0.0, a=1.0))
+        self._log(self._detections, TOPIC_DETECTIONS, annotations.encode(), wall_ns)
+
+    def _annotations(self, wall_ns: int, boxes: list[dict], outline) -> "msgs.ImageAnnotations":
         timestamp = _ts(wall_ns)
-        outline = msgs.Color(r=1.0, g=0.0, b=1.0, a=1.0)
         points, texts = [], []
         for box in boxes:
             x0, y0, x1, y1 = (float(box[key]) for key in ("x0", "y0", "x1", "y1"))
@@ -440,8 +459,7 @@ class EpisodeWriter:
                     background_color=msgs.Color(r=0.0, g=0.0, b=0.0, a=0.6),
                 )
             )
-        annotations = msgs.ImageAnnotations(points=points, texts=texts)
-        self._log(self._boxes, TOPIC_GROUND_TRUTH_BOXES, annotations.encode(), wall_ns)
+        return msgs.ImageAnnotations(points=points, texts=texts)
 
     # ---- finishing ----------------------------------------------------------
 

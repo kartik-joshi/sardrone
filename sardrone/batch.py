@@ -114,11 +114,13 @@ def is_done(manifest: list[dict], episode_id: str, episode_dir: Path) -> bool:
 # ---- running one episode -----------------------------------------------------
 
 
-def _search_command(row: VariationRow, world_dir: Path, mcap: Path, fake: bool) -> list[str]:
+def _search_command(row: VariationRow, world_dir: Path, mcap: Path, fake: bool, detector: str = "oracle") -> list[str]:
     command = [
         sys.executable, "-m", "sardrone.mission.search",
         "--world-dir", str(world_dir), "--out", str(mcap), "--overwrite",
     ]  # fmt: skip
+    if detector != "oracle":
+        command += ["--detector", detector]
     return command + (["--fake"] if fake else [])
 
 
@@ -129,6 +131,7 @@ def run_episode(
     world_root: Path = DEFAULT_WORLD_ROOT,
     timeout_s: float = 900.0,
     fake: bool = False,
+    detector: str = "oracle",
 ) -> EpisodeResult:
     """Generate the world and fly it. Never raises for an ordinary failure:
     the batch must survive one bad episode."""
@@ -151,7 +154,7 @@ def run_episode(
         with open(log_dir / "search.log", "w") as log:
             try:
                 done = subprocess.run(
-                    _search_command(row, paths.folder, mcap, fake),
+                    _search_command(row, paths.folder, mcap, fake, detector),
                     cwd=PROJECT_ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=timeout_s,
                 )  # fmt: skip
             except subprocess.TimeoutExpired:
@@ -276,6 +279,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fake", action="store_true", help="fake drone, no simulator")
     parser.add_argument("--limit", type=int, help="only the first N rows")
     parser.add_argument("--only", help="only this episode id")
+    parser.add_argument("--prefix", help="only episodes whose id starts with this, e.g. test-")
+    parser.add_argument(
+        "--detector", default="oracle",
+        help="'oracle', or a model version (closed loop). With a model, give --episode-dir too, "
+        "so these episodes do not replace the oracle ones.",
+    )  # fmt: skip
     parser.add_argument("--timeout", type=float, default=900.0, help="seconds per episode")
     parser.add_argument("--max-attempts", type=int, default=2)
     args = parser.parse_args(argv)
@@ -283,15 +292,19 @@ def main(argv: list[str] | None = None) -> int:
     rows = load_matrix(args.matrix)
     if args.only:
         rows = [row for row in rows if row.id == args.only]
+    if args.prefix:
+        rows = [row for row in rows if row.id.startswith(args.prefix)]
     if args.limit:
         rows = rows[: args.limit]
+    if args.detector != "oracle" and args.episode_dir == DEFAULT_EPISODE_DIR:
+        parser.error("--detector with a model needs its own --episode-dir")
     suffix = ".fake.manifest.csv" if args.fake else ".manifest.csv"
     manifest = args.manifest or args.episode_dir / f"{args.matrix.stem}{suffix}"
 
     def runner(row: VariationRow) -> EpisodeResult:
         return run_episode(
             row, episode_dir=args.episode_dir, world_root=args.world_root,
-            timeout_s=args.timeout, fake=args.fake,
+            timeout_s=args.timeout, fake=args.fake, detector=args.detector,
         )  # fmt: skip
 
     started = time.monotonic()
