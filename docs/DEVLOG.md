@@ -411,3 +411,65 @@ Full tables: `docs/results/auto_labeler.md`.
   people is.
 - The val split is two pilot episodes. It is enough to debug training, not
   to report results. The plan's 60 + 15 episode dataset is not recorded yet.
+
+## Phase 3 groundwork, written while the v1 batch records (2026-11-15)
+
+The 75-episode v1 batch takes about six hours. Training would compete with
+the simulator for CPU and GPU and could push episodes past their time
+limit, so only code the batch does not use was written meanwhile. No file
+under `sardrone/` that an episode imports was touched after the batch
+started at commit 33d89df.
+
+### Done
+
+- **v1 matrix** (`configs/v1.yaml`): 60 training and 15 sim-test episodes
+  from two blocks with different seeds. Splits now come from the episode
+  id: `test-*` is sim-test, every 10th `train-*` is validation.
+- **SARD** (`make sard`): 1,981 real images, 6,532 people, CC BY 4.0, from
+  the authors' open Zenodo record (IEEE DataPort wants a subscription).
+  MD5 checked against the published value. `sard-test` (1,387 images,
+  frozen) and `sard-train-pool` (594), cut by frame number.
+- **YOLO export** (`make export`): symlinks, labels, `dataset.yaml`, and a
+  hash over every image and label.
+- **Metrics** (`sardrone/train/metrics.py`): matching, COCO-style AP,
+  precision and recall at a cut-off, bootstrap intervals over images.
+- **Scorecard**, **training**, **prediction** and **evaluation** commands
+  (`make smoke-train`, `make train`, `make evaluate`).
+
+### Checks
+
+- My AP code against FiftyOne's, on the 4,105 pilot frames with OWLv2
+  auto-labels: mAP@0.5:0.95 0.5411 against 0.541; precision / recall at
+  cut-offs 0.05, 0.1, 0.2 agree to three decimals. 1,000 bootstrap draws
+  take 0.9 s.
+- Smoke test on the CPU: 48 training and 16 validation frames, 2 epochs at
+  640 px, 0.4 min. Export, train, predict and score all ran. The scores
+  from it mean nothing.
+
+### What broke, and what was learned
+
+- **The dry run caught a broken third of the dataset.** Before the real
+  batch I ran all 75 rows with the fake drone. Every 40 m mission was
+  refused: the stand-in camera was 640x480, where a person at 40 m is
+  11 px, under the 12 px limit; the real 1280x960 camera gives 16 px. The
+  mission was right and the dry run was wrong, so the stand-in now has the
+  real camera's size and lens. Six minutes of dry run against hours lost.
+- **Two OpenCV packages cannot share an environment.** Ultralytics depends
+  on `opencv-python`, FiftyOne on `opencv-python-headless`; both install
+  the same `cv2` module. Ultralytics is installed without its dependencies
+  and uses the OpenCV that is already there.
+- **Real people are twice as big.** Median box in SARD is 56 px on the
+  longer side in 1920x1080 images, against 30 px in our 1280x960 frames.
+  Scaled to the same 1280 px training width that is 37 against 30 px, so
+  the training image size (1280, not Ultralytics' default 640) matters for
+  both.
+- **SARD looks nothing like the simulation.** Tall dry grass, quarry
+  stone, dirt roads, forest shade. A large gap is to be expected.
+
+### Not done, waiting for the batch
+
+- `make evaluate` has not run end to end: it needs the `sim-test` view,
+  which does not exist until the v1 frames are extracted.
+- No real training. The smoke test proves the plumbing only.
+- Disk: 18 GB were freed (tool caches, an unrelated 14 GB language model,
+  the 11 pilot recordings) with Kartik's approval.

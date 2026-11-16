@@ -21,7 +21,7 @@ ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -152,6 +152,24 @@ sard: $(VENV)/.dev $(VENV)/.view
 EXPORT ?= v1
 export: $(VENV)/.dev $(VENV)/.view
 	$(PY) -m sardrone.train.export --name $(EXPORT)
+
+# Ultralytics is installed without its own OpenCV, because FiftyOne already
+# ships one (two OpenCV packages in one environment overwrite each other).
+$(VENV)/.yolo: | $(VENV)/.ml
+	$(PY) -m pip install --quiet --no-deps ultralytics ultralytics-thop polars polars-runtime-32
+	touch $@
+
+# Two minutes: does export -> train -> predict -> score run at all?
+smoke-train: $(VENV)/.dev $(VENV)/.view $(VENV)/.yolo
+	$(PY) -m sardrone.train.smoke
+
+VERSION ?= v1
+CHANGE  ?= baseline: simulation only
+train: $(VENV)/.dev $(VENV)/.view $(VENV)/.yolo
+	$(PY) -m sardrone.train.train --export $(EXPORT) --version $(VERSION)
+
+evaluate: $(VENV)/.dev $(VENV)/.view $(VENV)/.yolo
+	$(PY) -m sardrone.train.evaluate --version $(VERSION) --change "$(CHANGE)"
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load

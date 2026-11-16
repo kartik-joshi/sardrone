@@ -26,6 +26,10 @@ fly = ["mavsdk>=4.2,<5"]
 view = ["fiftyone[multimodal]>=1.19"]
 # Embeddings and the open-vocabulary auto-labeler (Phase 2E). About 1 GB.
 ml = ["torch>=2.4", "torchvision>=0.19", "transformers>=4.45", "umap-learn>=0.5"]
+# The detector (Phase 3) is Ultralytics YOLO, AGPL-3.0. It is NOT listed here
+# on purpose: it depends on opencv-python, which clashes with the
+# opencv-python-headless that FiftyOne installs. `make smoke-train` installs
+# it without dependencies (see the Makefile).
 
 [tool.setuptools.packages.find]
 include = ["sardrone*"]

@@ -277,3 +277,35 @@ def test_scorecard_row_and_files(frames, tmp_path):
     assert rows[0]["sim_map50"] == "0.5"
     text = path.with_suffix(".md").read_text()
     assert "| v1 | baseline | 0.500 (" in text and "`deadbeef`" in text and "| v2 | randomization |" in text
+
+
+# ---- predictions -------------------------------------------------------------
+
+
+def test_model_boxes_become_fiftyone_detections():
+    from sardrone.train.predict import boxes_to_detections, field_for
+
+    assert field_for("v1") == "pred_v1"
+    detections = boxes_to_detections(
+        [[0.25, 0.25, 0.30, 0.35], [-0.02, 0.9, 0.05, 1.03], [0.5, 0.5, 0.5, 0.6]],
+        [0.8, 0.3, 0.9],
+        [0.0, 0.0, 0.0],
+        {0: "person"},
+    ).detections
+    assert len(detections) == 2  # the zero-width box is dropped
+    # Corners (0.25, 0.25)-(0.30, 0.35) -> FiftyOne [x, y, w, h].
+    assert detections[0].bounding_box == pytest.approx([0.25, 0.25, 0.05, 0.10])
+    assert detections[0].label == "person" and detections[0].confidence == 0.8
+    # A box sticking out of the image is clipped to it.
+    assert detections[1].bounding_box == pytest.approx([0.0, 0.9, 0.05, 0.1])
+
+
+def test_training_record_keeps_every_setting():
+    from dataclasses import asdict
+
+    from sardrone.train.train import TrainConfig
+
+    config = asdict(TrainConfig())
+    assert config["imgsz"] == 1280, "640 would shrink a 30 px person to 15 px"
+    assert config["seed"] == 51 and config["flipud"] == 0.0
+    assert {"mosaic", "fliplr", "hsv_h", "hsv_s", "hsv_v", "scale", "translate"} <= set(config)
