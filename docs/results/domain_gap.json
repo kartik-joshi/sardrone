@@ -1,0 +1,9 @@
+{
+  "embedding_model": "clip-vit-base32-torch",
+  "sim_images": 2000,
+  "real_images": 1387,
+  "separability_sim_vs_real": 1.0,
+  "separability_degraded_sim_vs_real": 1.0,
+  "separability_sim_vs_sim": 0.5035,
+  "separability_real_vs_real": 0.4971
+}

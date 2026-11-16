@@ -256,3 +256,21 @@ def test_report_is_written(predicted, tmp_path):
     assert "| 0.05 | 0.500 | 0.500 | 0.500 | 3 | 3 | 3 |" in text
     assert "commit `abc1234`" in text and "uncommitted" not in text
     assert path.with_suffix(".json").exists()
+
+
+# ---- domain gap ---------------------------------------------------------------
+
+
+def test_domain_separability_is_half_for_one_domain_and_one_for_two():
+    import numpy as np
+
+    from sardrone.fo.gapmap import domain_separability
+
+    rng = np.random.default_rng(0)
+    cloud = rng.normal(size=(400, 16))
+    # Two halves of the same cloud cannot be told apart: accuracy near chance.
+    assert domain_separability(cloud[:200], cloud[200:]) == pytest.approx(0.5, abs=0.08)
+    # The same cloud shifted far away is trivially separable.
+    assert domain_separability(cloud[:200], cloud[200:] + 10.0) == pytest.approx(1.0, abs=0.01)
+    # Unequal sizes are balanced first, so "always say the big one" cannot score above 50 %.
+    assert domain_separability(cloud[:50], cloud[50:]) == pytest.approx(0.5, abs=0.15)

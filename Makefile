@@ -21,7 +21,7 @@ ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -170,6 +170,10 @@ train: $(VENV)/.dev $(VENV)/.view $(VENV)/.yolo
 
 evaluate: $(VENV)/.dev $(VENV)/.view $(VENV)/.yolo
 	$(PY) -m sardrone.train.evaluate --version $(VERSION) --change "$(CHANGE)"
+
+# Map of simulated vs real frames, and how separable the two are.
+gapmap: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
+	$(PY) -m sardrone.fo.gapmap
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load
