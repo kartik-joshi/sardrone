@@ -473,3 +473,93 @@ started at commit 33d89df.
 - No real training. The smoke test proves the plumbing only.
 - Disk: 18 GB were freed (tool caches, an unrelated 14 GB language model,
   the 11 pilot recordings) with Kartik's approval.
+
+## v1 dataset, and Phases 3A and 3B: the first model and the first gap (2026-11-16)
+
+### The v1 dataset (commit 33d89df)
+
+| | |
+| --- | --- |
+| Batch | 75 of 75 episodes completed on the first attempt, 6.2 h unattended, no failure, timeout or retry |
+| People | 225 placed, 225 reported (oracle) |
+| Recorded | 5.4 h of flight, 15.2 GB |
+| Frames at 2 Hz | 37,014 from v1 (41,692 with the pilot frames) |
+| Near-duplicates | 2,832 tagged at cosine distance 0.004 (the 1 % rule; 0.006 gave 1.8 % on this data) |
+| `train-v1` | 24,667 frames, 54 episodes, 34,909 boxes, 7,270 empty frames, median box 28 px |
+| `val-v1` | 2,861 frames, 6 episodes, 4,735 boxes |
+| `sim-test` | 7,453 frames, 15 episodes, 10,541 boxes (duplicates kept) |
+| Shared world seeds between splits | 0 |
+
+The validation episodes happen to contain no 15 m flights (four at 40 m,
+two at 25 m), so validation people are smaller than average.
+
+### Phase 3A: training v1
+
+- Export `v1-6k`, hash `d741bdbb19fbe45d`: a seeded sample of 5,999 of the
+  24,667 `train-v1` frames, taken within each episode in proportion to its
+  size. Reason: at 1280 px this Mac trains about 8 images per second, so a
+  full epoch would take 52 minutes and 10 epochs most of a day.
+- YOLO11n from COCO weights, 10 epochs, 1280 px, batch 8, MPS, seed 51,
+  Ultralytics 8.4.214, torch 2.15.0, commit 11045a0. 150 minutes.
+- Ultralytics' own validation on `val-v1`: mAP@0.5 0.953, mAP@0.5:0.95 0.720,
+  still rising at the last epoch.
+
+### Phase 3B: evaluation
+
+Confidence cut-off chosen on `val-v1` (best F1), then fixed. 1,000 bootstrap
+draws over images. Full rows: `docs/results/scorecard.md`.
+
+| Version | Sim-test mAP@0.5 | SARD mAP@0.5 | Gap |
+| --- | --- | --- | --- |
+| v0: COCO-pretrained YOLO11n, never trained on our data | 0.453 (0.440 to 0.465) | 0.591 (0.574 to 0.607) | -0.138 |
+| v1: fine-tuned on simulation only | 0.947 (0.944 to 0.953) | 0.014 (0.009 to 0.019) | 0.933 (0.927 to 0.941) |
+
+- v1 on SARD at its cut-off: precision 0.19, recall 0.01. It draws 402
+  boxes above confidence 0.25 across 1,387 images holding 4,971 people.
+- v0 on SARD at its cut-off: precision 0.83, recall 0.51.
+
+### What this means
+
+**Training on simulation alone did not transfer. It made the detector
+worse on real images than not training it at all.** The pretrained network
+could already find half the real people. Ten epochs on simulated frames
+taught it to find 93 % of simulated people and left it nearly blind to real
+ones. This is "catastrophic forgetting": with every example of `person`
+now a rendered mannequin on rendered grass, the network redefined the
+class around those and let go of what it knew.
+
+So the gap is not only "the simulation is unrealistic". The training
+recipe matters as much as the data: how much the network is allowed to
+change, and whether it ever sees a real person while it does. That shapes
+the next versions.
+
+Picture: `docs/images/v1_on_sard.jpg` (truth magenta, v0 cyan, v1 yellow;
+v1 draws nothing on these four).
+
+### Checks made before believing 0.014
+
+- The real-image pipeline is sound: the same code gives the untrained v0
+  0.591 on the same images.
+- SARD labels were drawn on random images and sit on the people.
+- The metric code matches FiftyOne's on the pilot auto-labels.
+- v1 is not broken: it scores 0.947 on simulated worlds it never saw.
+
+### The image-level gap, without any detector
+
+A logistic regression on CLIP embeddings tells `sim-test` frames from
+`sard-test` frames 100 % of the time (5-fold), and still 100 % after the
+camera-realism treatment; random halves of one domain score 50 %. On the
+map the two form separate islands (`docs/images/gap_map.png`). Noise, blur
+and JPEG artefacts do not move simulated pictures towards real ones as far
+as CLIP is concerned, which is a warning that v3 alone may not help.
+
+### How far to trust this
+
+- v1 saw a quarter of the training frames, for 10 epochs. A longer run on
+  all of them would score higher on simulation. Nothing here suggests it
+  would do better on real images.
+- The sample, epochs and settings are held fixed for v3 and v4, so that
+  each version changes one thing.
+- `sim-test` contains near-duplicates on purpose, so its interval is
+  narrower than the number of independent scenes (15 episodes) justifies.
+- SARD's `difficult` boxes are counted as ordinary people.

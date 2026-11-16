@@ -196,6 +196,45 @@ It finds 93 % of people in the open but 37 % of those under trees, and 49 %
 of those under 16 px. Those are simulated images; the point is the method:
 an auto-labeller's errors are measured before its labels are trusted.
 
+## The detector and the sim-to-real gap (Phase 3)
+
+```bash
+make export EXPORT=v1      # saved views -> YOLO dataset with a data hash
+```
+
+```bash
+make train EXPORT=v1 VERSION=v1
+```
+
+```bash
+make evaluate VERSION=v1 CHANGE="baseline: simulation only"
+```
+
+The detector is Ultralytics YOLO11n (AGPL-3.0), fine-tuned from COCO
+weights. It is scored on simulated worlds it never saw (`sim-test`) and on
+1,387 real drone photos it never saw (`sard-test`, from SARD by Sambolek and
+Ivasic-Kos, CC BY 4.0). The gap is the difference, with a 95 % bootstrap
+interval. The live table is [docs/results/scorecard.md](docs/results/scorecard.md).
+
+| Version | Sim mAP@0.5 | Real mAP@0.5 | Gap |
+| --- | --- | --- | --- |
+| v0: pretrained, never trained on our data | 0.453 | 0.591 | -0.138 |
+| v1: fine-tuned on simulation only | 0.947 | 0.014 | 0.933 |
+
+**The baseline result is that simulation-only training made things worse.**
+The pretrained network found half the real people; after ten epochs on
+simulated frames it finds 93 % of simulated people and almost none of the
+real ones. Truth in magenta, v0 in cyan, v1 in yellow (v1 draws nothing):
+
+![v1 on SARD](docs/images/v1_on_sard.jpg)
+
+Simulated and real frames are also trivially separable as images: a linear
+classifier on CLIP embeddings tells them apart 100 % of the time.
+
+![gap map](docs/images/gap_map.png)
+
+The following versions each change one thing to close the gap.
+
 ## What is verified, and what is not
 
 | Part | Status |
@@ -213,7 +252,9 @@ an auto-labeller's errors are measured before its labels are trusted.
 | Image labels | From Gazebo's bounding-box sensor. Reader, dataset and overlay code tested; 20 random overlays from the real batch checked by eye; box counts cross-checked against geometry on all 4,678 frames |
 | Curation | De-duplication, split and saved views tested on a hand-made dataset; threshold chosen from a sweep on the pilot data |
 | Auto-labeller | Scoring code tested against numbers worked out by hand; one full run on 4,105 frames |
-| Person detection | Not implemented. The `person_seen` event is still scripted from the drone's position; the default Gazebo world has no person in it |
+| Metrics | AP, precision, recall and bootstrap code tested against hand-worked numbers, and it reproduces FiftyOne's mAP on 4,105 frames |
+| Detector v1 | Trained once (10 epochs, 6,000-frame sample). Scores come from `make evaluate`; the real-image pipeline was cross-checked with the untrained network |
+| Person detection in flight | Not implemented. The `person_seen` event is still scripted from the drone's position; the default Gazebo world has no person in it |
 | Gazebo window (GUI) | Not tried: it needs XQuartz, which needs an admin password to install |
 
 Numbers from the recorded real flight (`flight-0001`, 61.6 s): cruise height
@@ -254,6 +295,13 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 | `sardrone/fo/env.py` | FiftyOne settings; keeps database and model weights inside the project |
 | `sardrone/fo/curate.py` | Embeddings, map, near-duplicates, split, saved views |
 | `sardrone/fo/autolabel.py` | OWLv2 auto-labels and their score against ground truth |
+| `sardrone/fo/real.py` | Loads SARD with a frozen test split |
+| `sardrone/fo/gapmap.py` | Sim-vs-real embedding map and separability |
+| `sardrone/train/export.py` | Saved views to a YOLO dataset with a data hash; realism and real-image options |
+| `sardrone/train/realism.py` | Camera-like degradation of training images |
+| `sardrone/train/train.py`, `predict.py`, `evaluate.py` | Train, predict, and score on sim and real |
+| `sardrone/train/metrics.py`, `scorecard.py` | AP, bootstrap intervals, the scorecard |
+| `sardrone/mission/tracker.py`, `metrics.py` | Kalman tracker with memory; CTE and ADE (not yet used in flight) |
 | `sardrone/fo/load.py` | Builds the `sar-episodes` dataset and launches the App |
 | `data/episodes/` | `.mcap` + `.json` output (git-ignored) |
 
@@ -471,6 +519,12 @@ Known limits:
 - **Leakage:** "I split by episode, not by frame. Frames from one flight
   are near-copies of each other, so a per-frame split would test the model
   on scenes it has effectively seen."
+- **Sim-to-real:** "My first detector scored 0.95 mAP on simulated test
+  worlds and 0.01 on real drone photos. The untrained network scored 0.59
+  on the same photos, so simulation-only fine-tuning had erased what it
+  knew about real people. I only saw that because I had put the pretrained
+  model on the scorecard as row zero. A baseline you did not train is the
+  cheapest sanity check there is."
 - **Testability:** "The mission is written against a five-method `Drone`
   interface. A fake drone with its own simulated clock lets the whole
   arm-takeoff-square-land sequence, including the timeout-and-land failure
