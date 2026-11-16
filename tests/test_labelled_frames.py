@@ -192,7 +192,9 @@ def test_extracting_again_replaces_instead_of_duplicating(tmp_path, dataset_name
     write_labelled_episode(tmp_path / "episodes" / "ep-one.mcap")
     write_labelled_episode(tmp_path / "episodes" / "ep-two.mcap", seconds=1.0)
     for _ in range(2):
-        dataset = build_frames_dataset(tmp_path / "episodes", tmp_path / "frames", dataset_name, log=lambda m: None)
+        dataset = build_frames_dataset(
+            tmp_path / "episodes", tmp_path / "frames", dataset_name, log=lambda m: None, force=True
+        )
     assert dataset.count_values("episode_id") == {"ep-one": 7, "ep-two": 3}
     assert len(list((tmp_path / "frames" / "ep-one").glob("*.jpg"))) == 7
 
@@ -217,3 +219,16 @@ def test_overlays_are_written_and_seeded(tmp_path, dataset_name):
     again = [p.name for p in save_overlays(dataset, tmp_path / "overlays", count=4, seed=1)]
     assert names == again
     assert Image.open(tmp_path / "overlays" / "sheet.jpg").width == 4 * 480
+
+
+def test_episodes_already_in_the_dataset_keep_what_was_computed_on_them(tmp_path, dataset_name):
+    write_labelled_episode(tmp_path / "episodes" / "ep-one.mcap")
+    dataset = build_frames_dataset(tmp_path / "episodes", tmp_path / "frames", dataset_name, log=lambda m: None)
+    dataset.set_values("clip_embedding", [[1.0, 0.0]] * len(dataset))  # stands for anything computed later
+    write_labelled_episode(tmp_path / "episodes" / "ep-two.mcap", seconds=1.0)
+    messages = []
+    dataset = build_frames_dataset(tmp_path / "episodes", tmp_path / "frames", dataset_name, log=messages.append)
+    assert len(messages) == 1 and messages[0].startswith("ep-two")  # only the new episode was extracted
+    old = dataset.match(fo.ViewField("episode_id") == "ep-one")
+    assert old.values("clip_embedding") == [[1.0, 0.0]] * 7, "existing samples were not replaced"
+    assert dataset.count_values("episode_id") == {"ep-one": 7, "ep-two": 3}

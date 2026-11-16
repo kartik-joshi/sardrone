@@ -168,12 +168,22 @@ def build_frames_dataset(
     name: str = DATASET_NAME,
     rate_hz: float = 2.0,
     log=print,
+    force: bool = False,
 ) -> fo.Dataset:
-    """Create or refresh the frames dataset from every labelled episode."""
+    """Add every labelled episode that is not in the dataset yet.
+
+    Episodes already present are left alone: re-extracting one would
+    replace its samples and with them everything computed since
+    (embeddings, duplicate tags, model predictions). `force=True`
+    re-extracts everything anyway.
+    """
     dataset = fo.load_dataset(name) if fo.dataset_exists(name) else fo.Dataset(name, persistent=True)
+    present = set(dataset.distinct("episode_id")) if dataset.has_field("episode_id") else set()
     for mcap_path in sorted(Path(episode_dir).glob("*.mcap")):
         if not mcap_path.with_suffix(".json").exists() or not has_labels(mcap_path):
             continue  # generated test images or older recordings: no label boxes
+        if mcap_path.stem in present and not force:
+            continue
         stats = extract_episode(mcap_path, dataset, frame_dir, rate_hz)
         log(
             f"{mcap_path.stem}: {stats.frames} frames, {stats.boxes} boxes "
@@ -203,9 +213,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--frames", type=Path, default=DEFAULT_FRAME_DIR)
     parser.add_argument("--name", default=DATASET_NAME)
     parser.add_argument("--rate", type=float, default=2.0, help="frames per second to keep")
+    parser.add_argument("--force", action="store_true", help="re-extract episodes already in the dataset")
     args = parser.parse_args(argv)
 
-    dataset = build_frames_dataset(args.dir, args.frames, args.name, args.rate)
+    dataset = build_frames_dataset(args.dir, args.frames, args.name, args.rate, force=args.force)
     if len(dataset) == 0:
         print("no labelled episodes found - record one with `make search` or `make batch`")
         return 1
