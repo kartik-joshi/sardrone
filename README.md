@@ -220,6 +220,15 @@ interval. The live table is [docs/results/scorecard.md](docs/results/scorecard.m
 | --- | --- | --- | --- |
 | v0: pretrained, never trained on our data | 0.453 | 0.591 | -0.138 |
 | v1: fine-tuned on simulation only | 0.947 | 0.014 | 0.933 |
+| v3: v1 + camera realism (noise, blur, JPEG, exposure) | 0.941 | 0.020 | 0.921 |
+| v4: v3 + 300 real images (5 %) | 0.934 | 0.547 | 0.387 |
+
+Three findings so far. Camera realism did almost nothing. Three hundred
+real images did what six thousand simulated ones could not, without
+costing anything on simulation. And v4 still does not beat the untrained
+network on real photos, so the simulated data has not yet been shown to
+help real performance at all; the real training and test images also come
+from the same footage, which flatters v4.
 
 **The baseline result is that simulation-only training made things worse.**
 The pretrained network found half the real people; after ten epochs on

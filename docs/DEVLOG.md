@@ -595,3 +595,52 @@ frames were still 100 % separable from real ones. The difference between
 these worlds and SARD is not sensor noise. It is content: three body
 meshes on flat textured ground against real people in long grass, on
 stone and on roads.
+
+### v4 = v3 + 5 % real images
+
+- Export `v4-6k`, hash `7918bf71d200e0da`: v3's 5,999 degraded simulated
+  frames plus 300 real images drawn with
+  seed 51 from `sard-train-pool` (594 images, frames 1 to 621 of the SARD
+  sequence). `sard-test` (frames after 621) is untouched.
+- Same network, epochs and settings. 161.2 minutes. The run record says
+  `dirty: True`: when training started, the scorecard files written by
+  the v3 evaluation were not committed yet. No code differed from commit
+  e316ec6.
+
+| Version | Sim-test mAP@0.5 | SARD mAP@0.5 | Gap | SARD precision / recall |
+| --- | --- | --- | --- | --- |
+| v0 pretrained | 0.453 | 0.591 (0.574 to 0.607) | -0.138 | 0.83 / 0.51 |
+| v1 simulation only | 0.947 | 0.014 (0.009 to 0.019) | 0.933 | 0.19 / 0.01 |
+| v3 + camera realism | 0.941 | 0.020 (0.017 to 0.023) | 0.921 | 0.13 / 0.02 |
+| v4 + 5 % real | 0.934 (0.931 to 0.941) | 0.547 (0.529 to 0.570) | 0.387 (0.364 to 0.408) | 0.70 / 0.59 |
+
+**Three hundred real images did what six thousand simulated ones could
+not.** The real score went from 0.020 to 0.547, and the simulated score
+barely moved (0.941 to 0.934). The gap fell from 0.92 to 0.39.
+
+What v4 is, and is not:
+
+- It is the first version that works in BOTH domains: 0.93 on simulated
+  worlds and 0.55 on real photos. v0 manages 0.45 and 0.59.
+- It does not beat the untrained network on real images (0.547 against
+  0.591; the intervals do not overlap, so v0 is still slightly better
+  there). Its recall on SARD is higher (0.59 against 0.51) and its
+  precision lower (0.70 against 0.83), at cut-offs chosen on simulated
+  validation data, which is not the right place to tune for real images.
+- So on this evidence the simulated data adds nothing to REAL performance.
+  What it adds is performance on the simulated worlds the drone actually
+  flies in, without losing the real-world ability.
+
+### How far to trust v4's real score
+
+- **The real training images and the real test images are from the same
+  footage.** SARD is one set of video shoots; the pool is its first 621
+  frames and the test set the rest. Scenes, people and clothing recur. So
+  0.547 measures "more of the same shoot", not "a new place". A second
+  real dataset (WiSARD, HERIDAL) would be the honest test of that.
+- One training run per version, one seed. The bootstrap interval covers
+  the choice of test images, not the randomness of training. A v4 trained
+  again might land a few points away.
+- 5 % is of the 6,000-frame sample, which is 300 images, or half of the
+  pool. The plan's "+5 %" of the full training set would be 1,233 images,
+  more than the pool holds.
