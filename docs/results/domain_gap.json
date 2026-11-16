@@ -5,5 +5,12 @@
   "separability_sim_vs_real": 1.0,
   "separability_degraded_sim_vs_real": 1.0,
   "separability_sim_vs_sim": 0.5035,
-  "separability_real_vs_real": 0.4971
+  "separability_real_vs_real": 0.4971,
+  "separability_randomized_sim_vs_real": 1.0,
+  "separability_randomized_sim_vs_plain_sim": 0.9323,
+  "mean_distance_to_nearest_real_frame": {
+    "plain_sim": 0.2914,
+    "randomized_sim": 0.3026,
+    "real_to_real_other_frames": 0.0225
+  }
 }
