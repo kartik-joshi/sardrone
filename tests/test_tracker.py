@@ -75,14 +75,32 @@ def test_iou():
     assert box_iou((0, 0, 10, 10), (5, 0, 15, 10)) == pytest.approx(1 / 3)
 
 
-def test_association_maximises_total_overlap():
+def test_association_minimises_total_distance():
     tracks = [box_at(100, 100), box_at(112, 100)]
     detections = [box_at(109, 100), box_at(121, 100)]  # both people moved 9 px right
-    # Greedy would give detection 0 to track 1 (3 px away, the best single
-    # overlap), leaving track 0 with a far detection. The right answer pairs in order.
-    assert sorted(associate(tracks, detections, 0.1)) == [(0, 0), (1, 1)]
-    assert associate(tracks, [], 0.1) == [] and associate([], detections, 0.1) == []
-    assert associate([box_at(0, 0)], [box_at(500, 500)], 0.1) == []  # too far apart to pair
+    # Greedy would give detection 0 to track 1 (3 px away, the nearest single
+    # pair), leaving track 0 with a far detection: total 3 + 21 = 24 px.
+    # Pairing in order costs 9 + 9 = 18 px, and is right.
+    assert sorted(associate(tracks, detections)) == [(0, 0), (1, 1)]
+    assert associate(tracks, []) == [] and associate([], detections) == []
+    assert associate([box_at(0, 0)], [box_at(500, 500)]) == []  # too far apart to pair
+
+
+def test_distance_is_measured_in_body_lengths():
+    from sardrone.mission.tracker import gated_distance
+
+    # 40 px tall boxes, centres 40 px apart: exactly one body-length.
+    assert gated_distance(box_at(100, 100), box_at(140, 100)) == pytest.approx(1.0)
+    # The same 40 px for people 4 times as big is a quarter of a body-length.
+    assert gated_distance(box_at(100, 100, 80, 160), box_at(140, 100, 80, 160)) == pytest.approx(0.25)
+
+
+def test_a_box_that_no_longer_overlaps_its_old_place_is_still_matched():
+    # A 12 x 24 px person whose image jumps 30 px in one frame: zero overlap.
+    old, new = box_at(100, 100, 12, 24), box_at(130, 100, 12, 24)
+    assert box_iou(old, new) == 0.0
+    assert associate([old], [new]) == [(0, 0)]  # 1.25 body-lengths: inside the gate of 1.5
+    assert associate([old], [box_at(160, 100, 12, 24)]) == []  # 2.5 body-lengths: someone else
 
 
 # ---- tracker -----------------------------------------------------------------

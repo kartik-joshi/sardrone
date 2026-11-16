@@ -111,20 +111,40 @@ class Track:
         return self.misses > 0
 
 
-def associate(tracks: list[Box], detections: list[Box], min_iou: float) -> list[tuple[int, int]]:
+def gated_distance(a: Box, b: Box) -> float:
+    """Distance between two box centres, in units of the boxes' own size.
+
+    1.0 means "one body-length apart". Measuring in body-lengths makes one
+    threshold work for a person 15 px tall and one 80 px tall.
+    """
+    (ax, ay), (bx, by) = centre(a), centre(b)
+    size = (max(a[2] - a[0], a[3] - a[1]) + max(b[2] - b[0], b[3] - b[1])) / 2
+    return float(np.hypot(ax - bx, ay - by) / max(size, 1.0))
+
+
+def associate(tracks: list[Box], detections: list[Box], gate: float = 1.5) -> list[tuple[int, int]]:
     """Pair predicted track boxes with detections: [(track index, detection index)].
 
-    Uses the Hungarian method, which finds the pairing with the largest
-    TOTAL overlap. A greedy "best match first" can pair two people the
-    wrong way round when they stand close together.
+    Boxes are compared by how far apart their CENTRES are, not by overlap.
+    People here are about 30 px tall while the picture shifts by tens of
+    pixels per frame when the drone turns, so a box often does not overlap
+    its own previous position at all. (The first closed-loop flight, which
+    matched by overlap, broke 3 people into 70 tracks.) A pair is allowed
+    when the centres are within `gate` body-lengths.
+
+    The Hungarian method then picks the pairing with the smallest TOTAL
+    distance. A greedy "nearest first" can pair two people the wrong way
+    round when they are close together.
     """
     if not tracks or not detections:
         return []
     from scipy.optimize import linear_sum_assignment
 
-    overlap = np.array([[box_iou(t, d) for d in detections] for t in tracks])
-    rows, columns = linear_sum_assignment(-overlap)
-    return [(int(r), int(c)) for r, c in zip(rows, columns) if overlap[r, c] >= min_iou]
+    cost = np.array([[gated_distance(t, d) for d in detections] for t in tracks])
+    blocked = cost > gate
+    cost = np.where(blocked, 1e6, cost)  # forbidden pairs: possible only if nothing else is left
+    rows, columns = linear_sum_assignment(cost)
+    return [(int(r), int(c)) for r, c in zip(rows, columns) if not blocked[r, c]]
 
 
 class Tracker:
@@ -136,13 +156,13 @@ class Tracker:
                 ...  # track.id, track.box, track.coasting
     """
 
-    def __init__(self, max_age: int = 10, min_hits: int = 3, min_iou: float = 0.1):
+    def __init__(self, max_age: int = 10, min_hits: int = 3, gate: float = 1.5):
         # max_age: how many frames a track may coast before it is forgotten.
         # min_hits: detections needed before a track is reported at all,
         #   which keeps one-frame false alarms from becoming "people".
-        # min_iou: small on purpose. People are about 30 px; a few pixels of
-        #   motion or box jitter already costs a lot of overlap.
-        self.max_age, self.min_hits, self.min_iou = max_age, min_hits, min_iou
+        # gate: how far (in body-lengths) a detection may be from where the
+        #   motion model expected the person and still be the same person.
+        self.max_age, self.min_hits, self.gate = max_age, min_hits, gate
         self.tracks: list[Track] = []
         self.frame = 0
         self._next_id = 1
@@ -154,7 +174,7 @@ class Tracker:
         predicted = [track.filter.predict() for track in self.tracks]
         for track, box in zip(self.tracks, predicted):
             track.predicted, track.detection = box, None
-        pairs = associate(predicted, detections, self.min_iou)
+        pairs = associate(predicted, detections, self.gate)
         matched_tracks = {t for t, _ in pairs}
         matched_detections = {d for _, d in pairs}
 
