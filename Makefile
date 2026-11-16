@@ -21,7 +21,7 @@ ROW       ?= pilot-meadow
 WORLD_DIR := data/worlds/$(ROW)
 SIDE      ?= 30
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap pipeline
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap pipeline agent-eval
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -181,6 +181,14 @@ gapmap: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
 RUN ?=
 pipeline: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
 	$(PY) -m sardrone.pipeline --version $(VERSION) --max-train 6000 $(if $(RUN),--run,)
+
+# ---- mission agent (Phase 4A) -------------------------------------------------
+
+# 20 written missions against the mission simulator. MODEL=rule-based is free;
+# MODEL=cohere calls the Cohere API (needs COHERE_API_KEY and COHERE_MODEL in .env).
+MODEL ?= rule-based
+agent-eval: $(VENV)/.dev
+	$(PY) -m sardrone.agent.evaluate --model rule-based $(if $(filter cohere,$(MODEL)),--model cohere,)
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load
