@@ -53,6 +53,7 @@ VAL_EVERY = 10  # every 10th training episode is held out for validation
 VIEW_TRAIN = "train-v1"
 VIEW_VAL = "val-v1"
 VIEW_TEST = "sim-test"
+VIEW_TRAIN_DR = "train-v2-dr"
 VIEW_HARD = "sar-hard-cases"
 VIEW_FALSE_ALARMS = "sar-false-alarms"
 
@@ -162,6 +163,7 @@ def split_of(episode_id: str) -> str:
         train-020  -> "val"    every 10th training episode: for choosing
                                settings and deciding when to stop training
         train-021  -> "train"
+        dr-012     -> "dr"     domain-randomized training episodes (v2)
         pilot-003  -> "pilot"  pipeline debugging runs, not part of v1
 
     Deriving the split from the id means it cannot drift: the same episode
@@ -170,6 +172,8 @@ def split_of(episode_id: str) -> str:
     prefix, _, number = episode_id.partition("-")
     if prefix == "test":
         return "test"
+    if prefix == "dr":
+        return "dr"
     if prefix == "train" and number.isdigit():
         return "val" if int(number) % VAL_EVERY == 0 else "train"
     return "pilot"
@@ -207,6 +211,7 @@ def save_views(dataset) -> dict:
     views = {
         VIEW_TRAIN: unique.match(F("split") == "train"),
         VIEW_VAL: unique.match(F("split") == "val"),
+        VIEW_TRAIN_DR: unique.match(F("split") == "dr"),
         # The test set keeps its near-duplicates: it should look like what a
         # flight really produces, not like a cleaned-up version of it.
         VIEW_TEST: dataset.match(F("split") == "test"),

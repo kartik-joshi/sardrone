@@ -19,6 +19,7 @@ from sardrone.worlds.assets import (
 )
 from sardrone.worlds.layout import (
     BASE_LINK_IN_MODEL_Z_M,
+    ClutterSpec,
     DRONE_MODEL,
     PersonSpec,
     TreeSpec,
@@ -102,13 +103,33 @@ def person_sdf(person: PersonSpec, variant_dir: Path) -> str:
     WHICH person a box belongs to."""
     asset = PEOPLE[person.pose]
     material = "" if asset.textured_by_mesh else _albedo(variant_dir / asset.clothing_texture)
-    visual = _mesh_visual("body", variant_dir / asset.mesh, material=material)
+    visual = _mesh_visual("body", variant_dir / asset.mesh, scale=person.scale, material=material)
     return (
         f'    <model name="{person.id}"><static>true</static>'
         f"{_pose(person.x, person.y, person.z, person.roll, person.pitch, person.yaw)}\n"
         f'      <plugin filename="gz-sim-label-system" name="gz::sim::systems::Label">'
         f"<label>{person.label}</label></plugin>\n"
         f'      <link name="link">\n{visual}      </link></model>\n'
+    )
+
+
+def clutter_sdf(index: int, item: ClutterSpec) -> str:
+    """A distractor made of a plain shape. It carries NO label plugin, so
+    the bounding-box sensor never draws a box around it."""
+    a, b, c = item.size
+    if item.kind == "log":
+        geometry = f"<cylinder><radius>{_n(a)}</radius><length>{_n(c)}</length></cylinder>"
+    elif item.kind == "box":
+        geometry = f"<box><size>{_n(a)} {_n(b)} {_n(c)}</size></box>"
+    else:  # rock, bush: a squashed sphere
+        geometry = f"<ellipsoid><radii>{_n(a)} {_n(b)} {_n(c)}</radii></ellipsoid>"
+    colour = _rgb(item.rgb)
+    return (
+        f'    <model name="clutter_{index:03d}_{item.kind}"><static>true</static>'
+        f"{_pose(item.x, item.y, item.z, item.roll, item.pitch, item.yaw)}\n"
+        f'      <link name="link"><visual name="v"><geometry>{geometry}</geometry>'
+        f"<material><ambient>{colour}</ambient><diffuse>{colour}</diffuse>"
+        f"<specular>0.05 0.05 0.05 1</specular></material></visual></link></model>\n"
     )
 
 
@@ -196,6 +217,7 @@ def world_sdf(
     parts.append(ground_sdf(ground_texture, ground_far_texture))
     parts += [tree_sdf(i, tree, fuel_dir) for i, tree in enumerate(spec.trees, start=1)]
     parts += [person_sdf(person, variant_dirs[person.id]) for person in spec.people]
+    parts += [clutter_sdf(i, item) for i, item in enumerate(spec.clutter, start=1)]
     parts += [preview_camera_sdf(camera) for camera in preview_cameras]
     if include_drone:
         parts.append(

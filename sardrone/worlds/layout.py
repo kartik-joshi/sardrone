@@ -16,7 +16,7 @@ import random
 from dataclasses import asdict, dataclass, field
 
 from sardrone.mcap.frames import Quat, Vec3, quat_from_rpy, rotate_vector
-from sardrone.worlds.assets import CLOTHING, PEOPLE, TREES
+from sardrone.worlds.assets import CLOTHING, CLOTHING_RANDOMIZED, PEOPLE, TREES
 from sardrone.worlds.matrix import POSES, VariationRow
 from sardrone.worlds.sun import SunSpec, sun_for
 
@@ -63,6 +63,27 @@ class TreeSpec:
 
 
 @dataclass(frozen=True)
+class ClutterSpec:
+    """A thing on the ground that is NOT a person: a distractor.
+
+    Clutter gives the detector chances to be wrong during training (a rock
+    in shade, a bright box, a log the length of a body). Without it, in
+    these simple worlds "anything that is not grass or tree" would be a
+    person, which no real scene allows.
+    """
+
+    kind: str  # rock | log | bush | box
+    x: float
+    y: float
+    z: float
+    roll: float
+    pitch: float
+    yaw: float
+    size: tuple[float, float, float]  # sphere: radii; box: sides; log: (radius, radius, length)
+    rgb: tuple[float, float, float]
+
+
+@dataclass(frozen=True)
 class PersonSpec:
     id: str
     pose: str  # standing | sitting | lying
@@ -79,6 +100,7 @@ class PersonSpec:
     box_centre: tuple[float, float, float]
     box_size: tuple[float, float, float]  # along the box's own x, y, z axes
     box_quat_wxyz: tuple[float, float, float, float]
+    scale: float = 1.0  # body size relative to the mesh (domain randomization)
 
     @property
     def label(self) -> int:
@@ -117,6 +139,8 @@ class WorldSpec:
     sun: SunSpec
     trees: tuple[TreeSpec, ...]
     people: tuple[PersonSpec, ...]
+    clutter: tuple[ClutterSpec, ...] = ()
+    randomize: bool = False
     gz_world: str = GZ_WORLD_NAME
     gz_model: str = DRONE_NAME
     camera_mount_m: tuple[float, float, float] = CAMERA_MOUNT_M
@@ -146,22 +170,27 @@ def _sample(rng: random.Random, accept, draw, what: str, tries: int = 4000):
     raise RuntimeError(f"could not place {what} after {tries} tries: the area is too crowded")
 
 
-def place_person(pose: str, x: float, y: float, yaw: float, face_up: bool = True):
-    """SDF pose and ground-truth box for one person standing/sitting/lying at (x, y)."""
+def place_person(pose: str, x: float, y: float, yaw: float, face_up: bool = True, scale: float = 1.0):
+    """SDF pose and ground-truth box for one person standing/sitting/lying at (x, y).
+
+    `scale` makes the body bigger or smaller. A mesh is scaled about its
+    own origin, so every measure taken from the mesh scales with it.
+    """
     asset = PEOPLE[pose]
+    size = tuple(round(s * scale, 3) for s in asset.size)
     if pose == "lying":
         # The mesh stands upright. Rolling it 90 deg lays it flat; it then
         # rests on what was its back (or front), so lift it by half its depth.
         roll = -math.pi / 2 if face_up else math.pi / 2
-        z = asset.size[1] / 2 + 0.02
+        z = size[1] / 2 + 0.02
     else:
         roll = 0.0
-        z = -asset.lo[2]  # put the lowest point of the mesh on the ground
+        z = -asset.lo[2] * scale  # put the lowest point of the mesh on the ground
     q = quat_from_rpy(roll, 0.0, yaw)
-    offset = rotate_vector(q, Vec3(*asset.centre))
+    offset = rotate_vector(q, Vec3(*(c * scale for c in asset.centre)))
     centre = tuple(round(p + o, 3) for p, o in zip((x, y, z), offset))
     quat = tuple(round(v, 6) for v in (q.w, q.x, q.y, q.z))
-    return (round(z, 3), round(roll, 6)), centre, asset.size, quat
+    return (round(z, 3), round(roll, 6)), centre, size, quat
 
 
 # ---- trees -------------------------------------------------------------------
@@ -221,7 +250,7 @@ def _place_trees(row: VariationRow, rng: random.Random) -> list[TreeSpec]:
 def _place_people(row: VariationRow, trees: list[TreeSpec], rng: random.Random) -> list[PersonSpec]:
     half = row.area_m / 2 - 2.0
     poses = list(row.poses) or [rng.choice(POSES) for _ in range(row.people)]
-    colours = list(CLOTHING)
+    colours = list(CLOTHING_RANDOMIZED if row.randomize else CLOTHING)
     people: list[PersonSpec] = []
 
     for index, pose in enumerate(poses, start=1):
@@ -256,7 +285,10 @@ def _place_people(row: VariationRow, trees: list[TreeSpec], rng: random.Random) 
 
         x, y = _sample(rng, accept, draw, f"person {index}")
         yaw = round(rng.uniform(0, 2 * math.pi), 4)
-        (z, roll), centre, size, quat = place_person(pose, x, y, yaw, face_up=rng.random() < 0.5)
+        face_up = rng.random() < 0.5
+        # Drawn only when randomizing, so plain rows keep their random stream.
+        scale = round(rng.uniform(0.85, 1.1), 3) if row.randomize else 1.0
+        (z, roll), centre, size, quat = place_person(pose, x, y, yaw, face_up=face_up, scale=scale)
         people.append(
             PersonSpec(
                 id=f"person_{index}",
@@ -264,17 +296,61 @@ def _place_people(row: VariationRow, trees: list[TreeSpec], rng: random.Random) 
                 clothing=rng.choice(colours),
                 occlusion=row.occlusion,
                 x=x, y=y, z=z, roll=roll, pitch=0.0, yaw=yaw,
-                box_centre=centre, box_size=size, box_quat_wxyz=quat,
+                box_centre=centre, box_size=size, box_quat_wxyz=quat, scale=scale,
             )  # fmt: skip
         )
     return people
+
+
+# ---- clutter (domain randomization) -------------------------------------------
+
+CLUTTER_COLOURS = {
+    "rock": [(0.45, 0.45, 0.45), (0.6, 0.58, 0.52), (0.35, 0.33, 0.3)],
+    "log": [(0.35, 0.24, 0.14), (0.45, 0.33, 0.2)],
+    "bush": [(0.12, 0.3, 0.1), (0.2, 0.36, 0.12), (0.3, 0.33, 0.12)],
+}
+
+
+def _place_clutter(row: VariationRow, people: list[PersonSpec], rng: random.Random) -> list[ClutterSpec]:
+    half = row.area_m / 2
+    clutter: list[ClutterSpec] = []
+    for _ in range(rng.randint(15, 45)):
+        kind = rng.choice(["rock", "rock", "log", "bush", "bush", "box"])
+        for _ in range(50):
+            x, y = rng.uniform(-half, half), rng.uniform(-half, half)
+            if math.hypot(x, y) >= TAKEOFF_CLEAR_M and all(math.hypot(x - p.x, y - p.y) >= 1.5 for p in people):
+                break
+        else:
+            continue
+        yaw = round(rng.uniform(0, 2 * math.pi), 4)
+        if kind == "rock":
+            r = rng.uniform(0.2, 0.8)
+            size = (round(r, 3), round(r * rng.uniform(0.6, 1.0), 3), round(r * rng.uniform(0.4, 0.8), 3))
+            z, roll, pitch, rgb = size[2] * 0.6, 0.0, 0.0, rng.choice(CLUTTER_COLOURS["rock"])
+        elif kind == "log":
+            radius, length = round(rng.uniform(0.1, 0.22), 3), round(rng.uniform(1.0, 3.0), 3)
+            size = (radius, radius, length)
+            z, roll, pitch, rgb = radius, 0.0, math.pi / 2, rng.choice(CLUTTER_COLOURS["log"])  # lying down
+        elif kind == "bush":
+            r = rng.uniform(0.4, 1.2)
+            size = (round(r, 3), round(r * rng.uniform(0.7, 1.0), 3), round(r * rng.uniform(0.5, 0.8), 3))
+            z, roll, pitch, rgb = size[2] * 0.7, 0.0, 0.0, rng.choice(CLUTTER_COLOURS["bush"])
+        else:  # a man-made box or tarp in any colour, including clothing-like ones
+            size = (round(rng.uniform(0.4, 2.0), 3), round(rng.uniform(0.4, 1.5), 3), round(rng.uniform(0.05, 0.6), 3))
+            z, roll, pitch = size[2] / 2, 0.0, 0.0
+            rgb = tuple(round(rng.uniform(0.05, 0.95), 3) for _ in range(3))
+        clutter.append(
+            ClutterSpec(kind, round(x, 3), round(y, 3), round(z, 3), roll, round(pitch, 6), yaw, size, tuple(rgb))
+        )
+    return clutter
 
 
 def build_world(row: VariationRow) -> WorldSpec:
     """The whole world for one matrix row. Same row -> same world, always."""
     trees = _place_trees(row, random.Random(f"{row.seed}:trees"))
     people = _place_people(row, trees, random.Random(f"{row.seed}:people"))
-    sun = sun_for(row.time_of_day, random.Random(f"{row.seed}:sun"))
+    sun = sun_for(row.time_of_day, random.Random(f"{row.seed}:sun"), randomize=row.randomize)
+    clutter = _place_clutter(row, people, random.Random(f"{row.seed}:clutter")) if row.randomize else []
 
     tallest = max((t.height_m for t in trees), default=0.0)
     if row.altitude_m - tallest < MIN_CLEARANCE_ABOVE_TREES_M:
@@ -295,4 +371,6 @@ def build_world(row: VariationRow) -> WorldSpec:
         sun=sun,
         trees=tuple(trees),
         people=tuple(people),
+        clutter=tuple(clutter),
+        randomize=row.randomize,
     )

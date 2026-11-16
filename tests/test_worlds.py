@@ -597,3 +597,85 @@ def test_generated_images_have_no_label_messages(tmp_path):
     path = tmp_path / "ep.mcap"
     asyncio.run(record_flight(drone, path, meta, sleep=drone.sleep, start_wall_ns=START_NS))
     assert TOPIC_GROUND_TRUTH_BOXES not in Episode(path).messages
+
+
+# ---- domain randomization ----------------------------------------------------
+
+
+def test_randomized_world_is_seeded_and_differs_from_the_plain_one():
+    plain, random_ = build_world(row(people=5)), build_world(row(people=5, randomize=True))
+    assert build_world(row(people=5, randomize=True)) == random_
+    assert plain.clutter == () and plain.randomize is False
+    assert 15 <= len(random_.clutter) <= 45 and random_.randomize is True
+    # Trees do not depend on the switch (their random stream is separate).
+    assert random_.trees == plain.trees
+    assert random_.sun != plain.sun
+    assert all(p.scale == 1.0 for p in plain.people)
+    assert all(0.85 <= p.scale <= 1.1 for p in random_.people) and len({p.scale for p in random_.people}) > 1
+
+
+def test_plain_worlds_are_exactly_what_they_were_before_randomization_existed():
+    # Positions recorded in the v1 dataset for seed 7 must not move.
+    spec = build_world(row(people=3))
+    again = build_world(row(people=3, randomize=False))
+    assert spec == again and spec.sun.azimuth_deg == again.sun.azimuth_deg
+
+
+def test_scaled_person_box_scales_with_the_body():
+    _, centre, size, _ = place_person("standing", 0.0, 0.0, 0.0, scale=1.0)
+    (z, _), big_centre, big_size, _ = place_person("standing", 0.0, 0.0, 0.0, scale=1.1)
+    assert big_size == pytest.approx(tuple(s * 1.1 for s in size), abs=2e-3)
+    assert big_centre[2] == pytest.approx(centre[2] * 1.1, abs=2e-3)
+    assert z == pytest.approx(0.011, abs=1e-3)  # the mesh's 1 cm offset below its origin, scaled
+    # A smaller sitting person still rests on the ground.
+    (z, _), small_centre, small_size, _ = place_person("sitting", 0.0, 0.0, 0.0, scale=0.85)
+    assert small_centre[2] - small_size[2] / 2 == pytest.approx(0.0, abs=0.01)
+    # A lying person is lifted by half the (scaled) body depth.
+    (z, _), _, lying_size, _ = place_person("lying", 0.0, 0.0, 0.0, scale=0.85)
+    assert z == pytest.approx(lying_size[1] / 2 + 0.02, abs=1e-3)
+
+
+def test_clutter_keeps_clear_of_people_and_takeoff():
+    spec = build_world(row(people=5, randomize=True, seed=11))
+    half = spec.area_m / 2
+    assert {c.kind for c in spec.clutter} <= {"rock", "log", "bush", "box"}
+    for item in spec.clutter:
+        assert abs(item.x) <= half and abs(item.y) <= half and item.z > 0
+        assert math.hypot(item.x, item.y) >= layout.TAKEOFF_CLEAR_M
+        assert all(math.hypot(item.x - p.x, item.y - p.y) >= 1.5 for p in spec.people)
+        assert all(0.0 <= channel <= 1.0 for channel in item.rgb)
+
+
+def test_randomized_sun_can_stand_anywhere():
+    import random
+
+    azimuths = [sun_for("noon", random.Random(seed), randomize=True).azimuth_deg for seed in range(60)]
+    assert min(azimuths) < 60 and max(azimuths) > 300  # all round the compass, not just south
+    plain = [sun_for("noon", random.Random(seed)).azimuth_deg for seed in range(60)]
+    assert 150 <= min(plain) and max(plain) <= 210
+    for seed in range(20):
+        sun = sun_for("dusk", random.Random(seed), randomize=True)
+        assert sun.elevation_deg >= 2.0 and all(0.0 <= c <= 1.0 for c in sun.diffuse + sun.ambient)
+
+
+def test_randomized_ground_uses_other_palettes_and_stays_seeded():
+    plain = assets.ground_texture("meadow", 11, size=128)
+    random_ = assets.ground_texture("meadow", 11, size=128, randomize=True)
+    assert random_.tobytes() == assets.ground_texture("meadow", 11, size=128, randomize=True).tobytes()
+    assert assets.ground_texture("meadow", 11, size=128).tobytes() == plain.tobytes()
+    means = {assets.ground_texture("meadow", seed, size=64, randomize=True).resize((1, 1)).getpixel((0, 0)) for seed in range(12)}
+    assert len(means) >= 4, "several clearly different ground colours over 12 seeds"
+
+
+def test_randomized_world_file_has_clutter_without_labels_and_scaled_people(tmp_path, fake_fuel):
+    paths = make_world(tmp_path, fake_fuel, people=3, randomize=True)
+    spec = load_spec(paths.folder)
+    world = ET.fromstring(paths.sdf.read_text()).find("world")
+    clutter = [m for m in world.findall("model") if m.get("name").startswith("clutter_")]
+    assert len(clutter) == len(spec["clutter"]) > 0
+    assert all(m.find("plugin") is None for m in clutter), "clutter must never get a label box"
+    for person in spec["people"]:
+        model = next(m for m in world.findall("model") if m.get("name") == person["id"])
+        scale = [float(v) for v in model.find(".//mesh/scale").text.split()]
+        assert scale == pytest.approx([person["scale"]] * 3)
+    assert spec["randomize"] is True

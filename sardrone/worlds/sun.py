@@ -52,9 +52,22 @@ def shadow_length_m(height_m: float, elevation_deg: float) -> float:
     return height_m / math.tan(math.radians(elevation_deg))
 
 
-def sun_for(time_of_day: str, rng: random.Random) -> SunSpec:
+def sun_for(time_of_day: str, rng: random.Random, randomize: bool = False) -> SunSpec:
     (el_lo, el_hi), (az_lo, az_hi), diffuse, intensity, ambient, sky = _PRESETS[time_of_day]
     elevation = round(rng.uniform(el_lo, el_hi), 2)
     azimuth = round(rng.uniform(az_lo, az_hi), 2)
+    if randomize:
+        # Domain randomization: the sun may stand anywhere around the
+        # compass and somewhat higher or lower; brightness, ambient light
+        # and colour temperature vary too.
+        elevation = round(max(2.0, elevation + rng.uniform(-0.25, 0.25) * elevation), 2)
+        azimuth = round(rng.uniform(0.0, 360.0), 2)
+        intensity = round(intensity * rng.uniform(0.7, 1.3), 3)
+        gain = rng.uniform(0.8, 1.25)
+        ambient = tuple(round(min(1.0, c * gain), 3) for c in ambient)
+        warmth = rng.uniform(-0.08, 0.08)  # positive = warmer (more red, less blue)
+        diffuse = (
+            round(min(1.0, diffuse[0] + warmth), 3), diffuse[1], round(min(1.0, max(0.0, diffuse[2] - warmth)), 3),
+        )  # fmt: skip
     direction = tuple(round(v, 6) for v in light_direction(elevation, azimuth))
     return SunSpec(time_of_day, elevation, azimuth, direction, diffuse, intensity, ambient, sky)

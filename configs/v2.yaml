@@ -1,0 +1,18 @@
+# v2: domain randomization. 30 training episodes whose worlds also vary in
+# ground colour, lighting, clothing, body size and clutter. Validation and
+# test stay the v1 ones (configs/v1.yaml), so scores remain comparable.
+#     make batch MATRIX=configs/v2.yaml
+defaults:
+  area_m: 60
+  camera_pitch_deg: 45
+  randomize: true
+
+samples:
+  - prefix: dr
+    count: 30
+    seed: 23
+    world: [meadow, forest_edge, park]
+    people: [1, 2, 3, 4, 5]
+    occlusion: [none, none, partial]
+    time_of_day: [noon, golden_hour, dusk]
+    altitude_m: [15, 25, 40]

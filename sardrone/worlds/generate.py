@@ -87,7 +87,7 @@ def generate(
     paths = WorldPaths(Path(world_root) / row.id)
     paths.folder.mkdir(parents=True, exist_ok=True)
 
-    texture = assets.ground_texture(spec.world, spec.seed)
+    texture = assets.ground_texture(spec.world, spec.seed, randomize=spec.randomize)
     texture.save(paths.ground, quality=90)
     assets.far_ground_texture(texture).save(paths.ground_far)
 

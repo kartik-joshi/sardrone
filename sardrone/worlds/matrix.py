@@ -38,6 +38,10 @@ class VariationRow:
     altitude_m: float = 25.0
     camera_pitch_deg: float = 45.0
     area_m: float = 120.0  # side of the square search area, centred on takeoff
+    # Domain randomization: also vary ground colour, lighting, clothing,
+    # body size, and scatter clutter. Off by default, so existing rows
+    # keep generating exactly the worlds they always did.
+    randomize: bool = False
 
     def __post_init__(self):
         def check(value, allowed, what):

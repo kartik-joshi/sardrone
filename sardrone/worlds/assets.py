@@ -118,6 +118,37 @@ CLOTHING = {
 }
 
 
+# A wider wardrobe for domain randomization: earth tones and camouflage
+# that hide a person, as well as colours that stand out.
+CLOTHING_RANDOMIZED = {
+    **CLOTHING,
+    "teal": (30, 140, 140),
+    "navy": (25, 35, 90),
+    "sky": (120, 180, 235),
+    "brown": (110, 75, 45),
+    "khaki": (165, 150, 100),
+    "olive": (95, 105, 50),
+    "grey": (125, 125, 130),
+    "maroon": (120, 30, 45),
+    "lime": (160, 220, 60),
+    "tan": (200, 170, 130),
+    "violet": (160, 110, 220),
+    "rust": (175, 80, 35),
+}
+
+# (dark, light) ground colours for domain randomization: lush, dry, autumn,
+# bare earth, pale. Real search areas are rarely one shade of green.
+GROUND_PALETTES_RANDOMIZED = [
+    ((62, 118, 52), (104, 150, 74)),
+    ((96, 124, 58), (150, 160, 84)),
+    ((140, 130, 70), (200, 185, 110)),
+    ((120, 95, 55), (175, 140, 85)),
+    ((95, 80, 60), (150, 130, 100)),
+    ((70, 90, 55), (135, 125, 80)),
+    ((150, 150, 120), (205, 200, 165)),
+]
+
+
 # ---- download ----------------------------------------------------------------
 
 
@@ -258,7 +289,7 @@ def clothing_variant(
     Built on first use and reused afterwards. The mesh and texture paths
     inside it are the same as in the original model folder.
     """
-    asset, rgb = PEOPLE[pose], CLOTHING[colour]
+    asset, rgb = PEOPLE[pose], CLOTHING_RANDOMIZED[colour]
     source = require(asset, fuel_dir)
     target = variant_dir / f"{asset.key}__{colour}"
     texture = target / asset.clothing_texture
@@ -292,7 +323,7 @@ GROUND_EXTENT_M = 240.0  # side of the textured ground square
 PATH_COLOUR = (168, 150, 112)
 
 
-def ground_texture(world: str, seed: int, size: int = 4096) -> Image.Image:
+def ground_texture(world: str, seed: int, size: int = 4096, randomize: bool = False) -> Image.Image:
     """A seeded grass-like picture covering the whole textured ground.
 
     Three layers of random noise are mixed: large soft patches (dry and lush
@@ -306,23 +337,30 @@ def ground_texture(world: str, seed: int, size: int = 4096) -> Image.Image:
 
     rng = random.Random(f"{seed}:ground")
     dark, light = GROUND_PALETTE[world]
+    patch_cells, blotch_cells, paths_wanted = 12, 160, 3 if world == "park" else 0
+    if randomize:
+        # A separate random stream, so the plain texture of a seed never changes.
+        dr = random.Random(f"{seed}:ground-dr")
+        dark, light = dr.choice(GROUND_PALETTES_RANDOMIZED)
+        patch_cells, blotch_cells = dr.choice([6, 12, 24]), dr.choice([80, 160, 320])
+        paths_wanted = dr.choice([0, 0, 1, 2, 3])
 
     def noise(side: int) -> Image.Image:
         return Image.frombytes("L", (side, side), rng.randbytes(side * side))
 
-    patches = noise(12).resize((size, size), Image.BICUBIC)
-    blotches = noise(160).resize((size, size), Image.BICUBIC)
+    patches = noise(patch_cells).resize((size, size), Image.BICUBIC)
+    blotches = noise(blotch_cells).resize((size, size), Image.BICUBIC)
     grain = noise(size)
     mix = Image.blend(Image.blend(patches, blotches, 0.4), grain, 0.3)
 
     channels = [mix.point(lambda v, d=d, l=l: int(d + (l - d) * v / 255)) for d, l in zip(dark, light)]
     image = Image.merge("RGB", channels)
 
-    if world == "park":
+    if paths_wanted:
         paths = Image.new("L", (size, size), 0)
         draw = ImageDraw.Draw(paths)
         width = int(2.0 / GROUND_EXTENT_M * size)  # a 2 m wide path
-        for _ in range(3):
+        for _ in range(paths_wanted):
             points = [(rng.uniform(0, size), rng.uniform(0, size)) for _ in range(3)]
             draw.line(points, fill=255, width=width, joint="curve")
         paths = paths.filter(ImageFilter.GaussianBlur(3))
