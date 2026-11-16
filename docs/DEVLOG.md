@@ -585,8 +585,10 @@ what it was built on.
 | v3 | 0.941 (0.935 to 0.945) | 0.020 (0.017 to 0.023) | 0.921 (0.913 to 0.925) |
 
 **Camera realism did almost nothing.** The real score went from 0.014 to
-0.020. The intervals just fail to overlap, so the change is probably real,
-but it is useless in practice: recall on SARD is still 1.6 %. The
+0.020. The two intervals overlap (0.009 to 0.019 and 0.017 to 0.023), so
+even that small change is not established; either way it is useless in
+practice: recall on SARD is still 1.6 %. (An earlier version of this entry
+said the intervals do not overlap. That was wrong.) The
 simulated score dropped slightly, as expected when training images are
 made harder.
 
