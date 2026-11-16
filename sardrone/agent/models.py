@@ -67,8 +67,16 @@ class CohereModel:
     `input_tokens` and `output_tokens`.
     """
 
-    def __init__(self, model: str | None = None, temperature: float = 0.0, seed: int = 51):
+    def __init__(self, model: str | None = None, temperature: float = 0.0, seed: int = 51,
+                 min_seconds_between_calls: float = 3.2):  # fmt: skip
         import cohere
+
+        # A free trial key allows 20 chat requests per minute (Cohere's
+        # rate-limit page, checked 2026-11-16). 3.2 s between calls stays
+        # under that. Set to 0 with a production key.
+        self.min_gap_s = min_seconds_between_calls
+        self._last_call = 0.0
+        self.calls = 0
 
         load_env_file()
         key = os.environ.get("COHERE_API_KEY")
@@ -82,6 +90,13 @@ class CohereModel:
         self._client = cohere.ClientV2(api_key=key)
 
     def reply(self, messages: list[dict], tools: list[dict]) -> Reply:
+        import time
+
+        wait = self.min_gap_s - (time.monotonic() - self._last_call)
+        if wait > 0:
+            time.sleep(wait)
+        self._last_call = time.monotonic()
+        self.calls += 1
         response = self._client.chat(
             model=self.model,
             messages=messages,
