@@ -1101,3 +1101,34 @@ Consequences:
   bit-identical to the originals.
 - `make frames` would not re-extract them, since their frames are already
   in the dataset.
+
+## Precision-recall curves (2026-11-17)
+
+Phase 3B asked for PR curves; until now only the summary numbers existed.
+`python -m sardrone.train.curves` draws them from the predictions stored
+by `make evaluate` (`docs/images/pr_curves.png`). The area under each curve
+reproduces the scorecard's mAP@0.5 to four decimals for all 14 curves,
+which checks the plotting against the scoring.
+
+What the curves show that the numbers do not:
+
+| On real photos | Highest recall reached (cut-off 0.001) | Precision of its most confident boxes |
+| --- | --- | --- |
+| v0, untrained | 0.69 | about 0.99 |
+| v4 | 0.80 | about 0.77 |
+| v6 | 0.82 | about 0.87 |
+
+- **The untrained network is more precise; the trained ones find more
+  people.** The curves cross at about 0.55 recall. Below that, v0 is ahead;
+  above it, v4 and v6 are, and v0 cannot reach past 0.69 at any cut-off.
+  mAP averages over the whole curve and so hides that the trained models
+  win where search and rescue cares most.
+- **v4's most confident boxes on real images are wrong about a quarter of
+  the time.** Its curve starts at precision 0.77, not near 1. Something in
+  real scenes looks more like a simulated person to it than real people do.
+  Not investigated.
+- **On simulated worlds every trained version looks alike** (the curves
+  overlap up to recall 0.9); the scorecard's differences there are small.
+
+One training run per version; given the seed spread (0.054 mAP for v4),
+the exact crossing point and maximum recalls will move between runs.

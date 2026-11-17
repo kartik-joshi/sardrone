@@ -187,6 +187,17 @@ established.** v6 scored 0.597 against v4's 0.547, but v4 trained three
 times with different seeds scored 0.532, 0.547 and 0.586 (see "Run-to-run variation" below).
 The v6 advantage over the best v4 run is 0.011.
 
+### Precision-recall curves
+
+Source: `docs/images/pr_curves.png`, from the stored predictions. On real
+photos the untrained v0 is the most precise model up to about 0.55 recall
+and cannot go beyond 0.69 recall at any cut-off; v4 and v6 reach 0.80 and
+0.82. Their most confident boxes are less reliable than v0's (precision
+about 0.77 for v4 and 0.87 for v6 at the start of the curve). For search
+and rescue, where a missed person costs more than a false alarm, the
+high-recall end is the part that matters, and there the trained models
+lead. mAP, which averages the whole curve, does not show this.
+
 ### Run-to-run variation
 
 Source: `docs/results/seed_runs.csv`. The same recipe trained again with

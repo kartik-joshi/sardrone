@@ -395,3 +395,16 @@ def test_extra_real_images_are_added_to_training_unchanged(frames, tmp_path):
     assert (out / "images" / "train" / "frame_2.jpg").is_symlink(), "real images are linked, never degraded"
     assert not (out / "images" / "train" / "frame_0.jpg").is_symlink()
     assert manifest["notes"] == {"real": "1 image"}
+
+
+def test_envelope_curve_by_hand():
+    from sardrone.train.curves import envelope_curve
+
+    # Same three images as dataset(): at IoU 0.5 the predictions in order are
+    # correct, correct, wrong; 4 people. Recall 0.25, 0.5, 0.5;
+    # precision 1, 1, 2/3 -> envelope 1, 1, 2/3.
+    recall, precision = envelope_curve(dataset())
+    assert list(recall) == pytest.approx([0.25, 0.5, 0.5])
+    assert list(precision) == pytest.approx([1.0, 1.0, 2 / 3])
+    # The area under it is the AP the scorecard reports.
+    assert average_precision(precision, recall) == pytest.approx(score(dataset())[0].map50)

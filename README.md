@@ -52,6 +52,12 @@ detection; what it buys is performance in the simulated worlds the drone
 actually flies in (0.926 against 0.453) without losing the real-world
 ability.
 
+The precision-recall curves add a nuance the single numbers hide: on real
+photos the untrained network is more precise at high confidence, but it
+never finds more than 69 % of the people; v4 and v6 reach 80 % and 82 %.
+
+![Precision-recall curves](docs/images/pr_curves.png)
+
 **3. With the detector in the loop, the drone found 39 of 45 people** across
 15 unseen simulated worlds, with no false reports. All six misses were in
 forest worlds, five of them people under trees.
