@@ -1168,3 +1168,20 @@ contain them.
 
 Counts are not compared across models here: v4 and v6 have different
 cut-offs (0.378 and 0.140), so v6 draws far more boxes in total.
+
+## Vehicles as distractors (2026-11-17)
+
+Following the false-alarm review: a matrix row's `vehicles: N` places N
+parked cars in the world, built from boxes (body, dark cabin, roof, four
+wheels), 3.8 to 4.6 m long, in common car colours, at least 4 m from any
+person and clear of trees and the takeoff point. No label plugin, so the
+label sensor never boxes them: in training they are background. Vehicles
+use their own random stream, so a row without them is unchanged; all 105
+recorded worlds were regenerated and compared (identical apart from the
+`scale` field added to people after the v1 batch, always 1.0 there).
+Rendered once to check they read as cars from the drone's height.
+
+`configs/v7.yaml`: 30 randomized episodes with 1 to 3 vehicles each. Plan
+for v7: v6's recipe (randomized worlds, camera realism, the same 300 real
+images) on these worlds, then check whether cars still top the list of
+confident mistakes on real photos.

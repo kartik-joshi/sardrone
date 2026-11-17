@@ -1,0 +1,19 @@
+# v7: v2's domain-randomized worlds plus 1 to 3 parked vehicles each.
+# Reviewing real-photo mistakes showed the detector's most confident false
+# alarms are cars on grass, and no simulated world had a vehicle.
+#     make batch MATRIX=configs/v7.yaml
+defaults:
+  area_m: 60
+  camera_pitch_deg: 45
+  randomize: true
+
+samples:
+  - prefix: veh
+    count: 30
+    seed: 31
+    world: [meadow, forest_edge, park]
+    people: [1, 2, 3, 4, 5]
+    occlusion: [none, none, partial]
+    time_of_day: [noon, golden_hour, dusk]
+    altitude_m: [15, 25, 40]
+    vehicles: [1, 2, 3]

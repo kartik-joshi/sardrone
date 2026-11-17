@@ -113,9 +113,44 @@ def person_sdf(person: PersonSpec, variant_dir: Path) -> str:
     )
 
 
+def vehicle_sdf(index: int, item: ClutterSpec) -> str:
+    """A parked car built from boxes: a body, a cabin with dark windows, four
+    wheels. Crude, but from 15 to 40 m up it has a car's size, shape and
+    colour. No label plugin: the label sensor never boxes it."""
+    length, width, height = item.size
+    body_h, cabin_h = height * 0.5, height * 0.38
+    colour, glass, tyre = _rgb(item.rgb), "0.08 0.1 0.12 1", "0.05 0.05 0.05 1"
+
+    def part(name, pose, geometry, rgb):
+        return (f'<visual name="{name}">{pose}<geometry>{geometry}</geometry>'
+                f"<material><ambient>{rgb}</ambient><diffuse>{rgb}</diffuse>"
+                f"<specular>0.3 0.3 0.3 1</specular></material></visual>")  # fmt: skip
+
+    wheel_z, wheel_r = 0.32, 0.32
+    visuals = [
+        part("body", _pose(0, 0, wheel_z + body_h / 2), f"<box><size>{_n(length)} {_n(width)} {_n(body_h)}</size></box>", colour),
+        part("cabin", _pose(-length * 0.08, 0, wheel_z + body_h + cabin_h / 2),
+             f"<box><size>{_n(length * 0.5)} {_n(width * 0.9)} {_n(cabin_h)}</size></box>", glass),
+        part("roof", _pose(-length * 0.08, 0, wheel_z + body_h + cabin_h + 0.02),
+             f"<box><size>{_n(length * 0.44)} {_n(width * 0.84)} 0.04</size></box>", colour),
+    ]  # fmt: skip
+    for i, (dx, dy) in enumerate([(1, 1), (1, -1), (-1, 1), (-1, -1)]):
+        visuals.append(
+            part(f"wheel{i}", _pose(dx * length * 0.32, dy * width * 0.48, wheel_z, math.pi / 2, 0, 0),
+                 f"<cylinder><radius>{wheel_r}</radius><length>0.22</length></cylinder>", tyre)  # fmt: skip
+        )
+    return (
+        f'    <model name="clutter_{index:03d}_vehicle"><static>true</static>'
+        f"{_pose(item.x, item.y, 0.0, 0, 0, item.yaw)}\n"
+        f'      <link name="link">{"".join(visuals)}</link></model>\n'
+    )
+
+
 def clutter_sdf(index: int, item: ClutterSpec) -> str:
     """A distractor made of a plain shape. It carries NO label plugin, so
     the bounding-box sensor never draws a box around it."""
+    if item.kind == "vehicle":
+        return vehicle_sdf(index, item)
     a, b, c = item.size
     if item.kind == "log":
         geometry = f"<cylinder><radius>{_n(a)}</radius><length>{_n(c)}</length></cylinder>"

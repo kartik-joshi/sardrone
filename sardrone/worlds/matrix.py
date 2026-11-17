@@ -42,6 +42,10 @@ class VariationRow:
     # body size, and scatter clutter. Off by default, so existing rows
     # keep generating exactly the worlds they always did.
     randomize: bool = False
+    # Parked vehicles as unlabelled distractors (0 = none). On real photos
+    # the detector's most confident mistakes were cars on grass, and the
+    # simulated worlds had none.
+    vehicles: int = 0
 
     def __post_init__(self):
         def check(value, allowed, what):
@@ -63,6 +67,8 @@ class VariationRow:
             )
         if not 0.0 <= self.camera_pitch_deg <= 90.0:
             raise ValueError(f"{self.id}: camera_pitch_deg must be 0..90")
+        if not 0 <= self.vehicles <= 10:
+            raise ValueError(f"{self.id}: vehicles must be 0..10")
         if not 40.0 <= self.area_m <= 400.0:
             raise ValueError(f"{self.id}: area_m must be 40..400")
 

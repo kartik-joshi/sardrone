@@ -679,3 +679,43 @@ def test_randomized_world_file_has_clutter_without_labels_and_scaled_people(tmp_
         scale = [float(v) for v in model.find(".//mesh/scale").text.split()]
         assert scale == pytest.approx([person["scale"]] * 3)
     assert spec["randomize"] is True
+
+
+# ---- vehicles as distractors ---------------------------------------------------
+
+
+def test_vehicles_are_placed_clear_of_people_trees_and_takeoff():
+    spec = build_world(row(people=4, vehicles=3, seed=13))
+    cars = [c for c in spec.clutter if c.kind == "vehicle"]
+    assert len(cars) == 3
+    for car in cars:
+        assert math.hypot(car.x, car.y) >= layout.TAKEOFF_CLEAR_M + 3.0
+        assert all(math.hypot(car.x - p.x, car.y - p.y) >= 4.0 for p in spec.people)
+        assert all(math.hypot(car.x - t.x, car.y - t.y) >= t.canopy_radius_m + 2.5 for t in spec.trees)
+        assert 3.7 <= car.size[0] <= 4.7 and car.size[1:] == (1.8, 1.5)
+    for a in cars:
+        for b in cars:
+            if a is not b:
+                assert math.hypot(a.x - b.x, a.y - b.y) >= 5.0
+
+
+def test_vehicles_change_nothing_else_in_the_world():
+    without, with_cars = build_world(row(people=4, seed=13)), build_world(row(people=4, seed=13, vehicles=2))
+    assert with_cars.people == without.people and with_cars.trees == without.trees and with_cars.sun == without.sun
+    assert [c for c in with_cars.clutter if c.kind != "vehicle"] == list(without.clutter)
+    random_without = build_world(row(people=4, seed=13, randomize=True))
+    random_with = build_world(row(people=4, seed=13, randomize=True, vehicles=2))
+    assert [c for c in random_with.clutter if c.kind != "vehicle"] == list(random_without.clutter)
+    with pytest.raises(ValueError, match="vehicles"):
+        row(vehicles=11)
+
+
+def test_vehicle_world_file_has_cars_without_labels(tmp_path, fake_fuel):
+    paths = make_world(tmp_path, fake_fuel, people=2, vehicles=2)
+    world = ET.fromstring(paths.sdf.read_text()).find("world")
+    cars = [m for m in world.findall("model") if m.get("name").endswith("_vehicle")]
+    assert len(cars) == 2
+    for car in cars:
+        assert car.find("plugin") is None, "a car must never get a label box"
+        names = [v.get("name") for v in car.findall("link/visual")]
+        assert names[:3] == ["body", "cabin", "roof"] and sum(n.startswith("wheel") for n in names) == 4

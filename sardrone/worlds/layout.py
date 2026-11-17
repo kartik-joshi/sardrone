@@ -72,7 +72,7 @@ class ClutterSpec:
     person, which no real scene allows.
     """
 
-    kind: str  # rock | log | bush | box
+    kind: str  # rock | log | bush | box | vehicle
     x: float
     y: float
     z: float
@@ -302,6 +302,43 @@ def _place_people(row: VariationRow, trees: list[TreeSpec], rng: random.Random) 
     return people
 
 
+# ---- vehicles (distractors) ---------------------------------------------------
+
+# Common car body colours (0..1 RGB): red, silver, white, black, navy, grey, blue.
+VEHICLE_COLOURS = [
+    (0.75, 0.08, 0.10), (0.72, 0.73, 0.75), (0.92, 0.92, 0.92), (0.07, 0.07, 0.08),
+    (0.10, 0.14, 0.35), (0.40, 0.41, 0.43), (0.15, 0.30, 0.65),
+]  # fmt: skip
+VEHICLE_SIZE_M = (4.2, 1.8, 1.5)  # length, width, height of a small car
+
+
+def _place_vehicles(row: VariationRow, people: list, trees: list, rng: random.Random) -> list[ClutterSpec]:
+    """`row.vehicles` parked cars, clear of people (by 4 m), trees and takeoff."""
+    half = row.area_m / 2 - 4.0
+    vehicles: list[ClutterSpec] = []
+    for _ in range(row.vehicles):
+        for _ in range(200):
+            x, y = rng.uniform(-half, half), rng.uniform(-half, half)
+            if (
+                math.hypot(x, y) >= TAKEOFF_CLEAR_M + 3.0
+                and all(math.hypot(x - p.x, y - p.y) >= 4.0 for p in people)
+                and all(math.hypot(x - t.x, y - t.y) >= t.canopy_radius_m + 2.5 for t in trees)
+                and all(math.hypot(x - v.x, y - v.y) >= 5.0 for v in vehicles)
+            ):
+                break
+        else:
+            continue  # no room left; fewer vehicles rather than overlapping ones
+        length, width, height = VEHICLE_SIZE_M
+        vehicles.append(
+            ClutterSpec(
+                "vehicle", round(x, 3), round(y, 3), 0.0, 0.0, 0.0, round(rng.uniform(0, 2 * math.pi), 4),
+                (round(length * rng.uniform(0.9, 1.1), 3), round(width, 3), round(height, 3)),
+                rng.choice(VEHICLE_COLOURS),
+            )  # fmt: skip
+        )
+    return vehicles
+
+
 # ---- clutter (domain randomization) -------------------------------------------
 
 CLUTTER_COLOURS = {
@@ -351,6 +388,8 @@ def build_world(row: VariationRow) -> WorldSpec:
     people = _place_people(row, trees, random.Random(f"{row.seed}:people"))
     sun = sun_for(row.time_of_day, random.Random(f"{row.seed}:sun"), randomize=row.randomize)
     clutter = _place_clutter(row, people, random.Random(f"{row.seed}:clutter")) if row.randomize else []
+    # Vehicles have their own random stream, so adding them moves nothing else.
+    clutter += _place_vehicles(row, people, trees, random.Random(f"{row.seed}:vehicles"))
 
     tallest = max((t.height_m for t in trees), default=0.0)
     if row.altitude_m - tallest < MIN_CLEARANCE_ABOVE_TREES_M:
