@@ -1081,3 +1081,23 @@ had already reported. It found one person fewer this time; with one
 flight each, that is run-to-run variation in a closed loop (the missed
 person, person_3, was in view and not held long enough), not an effect of
 the fix, which only acts after a confirmation.
+
+## Housekeeping: training recordings deleted (2026-11-17)
+
+With Kartik's approval, the 90 training recordings were deleted to free
+19 GB: the 60 `train-*` and 30 `dr-*` `.mcap` files. Their JSON sidecars
+(people, reports, mission metrics) are kept, and their frames and labels
+remain in `data/frames` and the `sar-frames` dataset, which is all that
+training and evaluation use. Kept: the 15 `test-*` recordings, all
+closed-loop flights, and the Week 1 and agent episodes.
+
+Consequences:
+
+- Those flights no longer appear in the `sar-episodes` viewer (`make view`
+  drops samples whose file is gone).
+- `make batch` treats a missing file as not done, so running it again on
+  `configs/v1.yaml` or `configs/v2.yaml` would re-record them (about 6 and
+  2.5 hours). They would be flown from the same seeds, but would not be
+  bit-identical to the originals.
+- `make frames` would not re-extract them, since their frames are already
+  in the dataset.
