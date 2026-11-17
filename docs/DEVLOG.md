@@ -876,3 +876,40 @@ would need new content, not new parameters.
   of real data (a "v5") is untested, and is the more interesting question
   given these results.
 - One run, one seed, as for every version.
+
+## Follow-up experiments after the plan's versions (2026-11-16)
+
+Two questions the plan's versions left open. Version numbers continue from
+v4; each row states what it is built on.
+
+### v5 = v1 with the backbone frozen
+
+Question: v1 lost the pretrained network's ability on real images. Is that
+because the feature layers were overwritten? If so, keeping them fixed
+should keep the real score.
+
+- Same export as v1 (`d741bdbb19fbe45d`), same settings, plus `freeze=11`:
+  YOLO11's backbone is modules 0 to 10, so those keep their COCO weights
+  and only the neck and detection head train. The training log lists the
+  frozen layers. 113.5 minutes (faster, since fewer gradients are computed),
+  commit 433ae47.
+
+| Version | Sim-test mAP@0.5 | SARD mAP@0.5 | SARD precision / recall |
+| --- | --- | --- | --- |
+| v0 pretrained | 0.453 | 0.591 (0.574 to 0.607) | 0.83 / 0.51 |
+| v1 all layers trained | 0.947 | 0.014 (0.009 to 0.019) | 0.19 / 0.01 |
+| v5 backbone frozen | 0.943 (0.938 to 0.946) | 0.127 (0.119 to 0.138) | 0.35 / 0.16 |
+
+- **Freezing the backbone kept nine times more real-world ability (0.127
+  against 0.014) at no cost in simulation (0.943 against 0.947).** If only
+  simulated data is available, freeze the backbone.
+- **It is still a long way below the untrained network (0.591).** So the
+  backbone was not the main thing lost. With the backbone identical to
+  v0's, the difference is entirely in the neck and head: trained only on
+  rendered figures, they learn to call only rendered figures a person.
+  The features can still see real people; the head has stopped listening.
+- This also explains why 300 real images were enough for v4: the head
+  needed examples of what counts, not new features.
+
+Limits: one run. "Frozen" covers the backbone only; the neck trained
+freely. Lower learning rates or freezing the neck too were not tried.
