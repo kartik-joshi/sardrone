@@ -673,3 +673,73 @@ def test_tracker_error_is_measured_against_label_boxes(tmp_path):
     # The tracker predicts where each box will be one frame ahead; with
     # exact detections on a smoothly moving drone that is a few pixels off.
     assert ade["samples"] > 100 and 0.0 < ade["mean_px"] < 15.0
+
+
+# ---- second pass over tree cover ----------------------------------------------
+
+
+class LowOnlyDetector:
+    """Finds people only from below 20 m: a detector for which a person under
+    trees is too small from the main search altitude."""
+
+    name = "low-only"
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    def detect(self, pose, jpeg=None):
+        return self.inner.detect(pose, jpeg) if pose.position.z < 20.0 else []
+
+
+def test_second_pass_finds_people_the_high_pass_missed(tmp_path):
+    spec, truth = world_people(altitude_m=25.0)
+    cover = [(-30.0, -30.0), (30.0, -30.0), (30.0, 30.0), (-30.0, 30.0)]
+
+    def run(second_altitude):
+        folder = tmp_path / str(second_altitude)
+        folder.mkdir()
+        drone = FakeDrone()
+        camera = SyntheticCamera(width=1280, height=960, hfov_deg=99.7, pitch_deg=45.0)
+        meta = EpisodeMeta(world="forest_edge", weather="clear", time_of_day="noon", mission_prompt="search")
+        config = SearchConfig(altitude_m=25.0, second_pass_altitude_m=second_altitude)
+        path = folder / "search.mcap"
+        _, recorder = asyncio.run(
+            run_search(
+                drone, path, meta, camera=camera, polygon=square_polygon(60.0), truth=truth, config=config,
+                detector=LowOnlyDetector(nameless(truth)), ground_z=-0.227, cover_polygon=cover,
+                sleep=drone.sleep, start_wall_ns=START_NS,
+            )  # fmt: skip
+        )
+        return recorder, Episode(path), json.loads(path.with_suffix(".json").read_text())
+
+    _, _, without = run(None)
+    assert without["mission_metrics"]["people_found"] == 0 and without["search"]["second_pass"] is None
+
+    recorder, episode, with_pass = run(15.0)
+    assert with_pass["mission_metrics"]["people_found"] == 3 and with_pass["success"] is True
+    second = with_pass["search"]["second_pass"]
+    assert second["altitude_m"] == 15.0 and second["lanes"] >= 2
+    # The second pass crosses the first: its lanes are at right angles.
+    assert abs(second["lane_heading_deg"] - with_pass["search"]["lane_heading_deg"]) == pytest.approx(90.0)
+    messages = [log.message for log in episode.decoded(TOPIC_EVENTS)]
+    assert any(m.startswith("state: SEARCH second pass:") and "15 m over tree cover" in m for m in messages)
+    assert any(m.startswith("waypoint_reached: second-pass lane") for m in messages)
+    # It flew at 15 m for the second pass, and coverage still refers to the main search.
+    heights = [p.pose.position.z for p in episode.decoded(TOPIC_POSE)]
+    assert sum(abs(h - 15.0) < 0.05 for h in heights) > 100
+    assert with_pass["mission_metrics"]["coverage_percent"] == 100.0
+    assert with_pass["duration_s"] > without["duration_s"], "the second pass costs flight time"
+
+
+def test_tree_cover_polygon_wraps_the_trees_inside_the_area():
+    from sardrone.mission.search import tree_cover_polygon
+
+    spec = {"area_m": 60.0, "trees": [
+        {"kind": "pine", "x": 10.0, "y": 20.0, "scale": 1.0},   # canopy radius 1.59 m
+        {"kind": "oak", "x": -5.0, "y": 28.0, "scale": 1.0},    # canopy radius 5.92 m: sticks out of the area
+    ]}  # fmt: skip
+    (north0, east0), (north1, _), (_, east1), _ = tree_cover_polygon(spec, margin_m=2.0)
+    assert east0 == pytest.approx(-5.0 - 5.92 - 2.0) and east1 == pytest.approx(10.0 + 1.59 + 2.0)
+    assert north0 == pytest.approx(20.0 - 1.59 - 2.0)
+    assert north1 == 30.0  # cut at the edge of the 60 m area
+    assert tree_cover_polygon({"area_m": 60.0, "trees": []}) is None

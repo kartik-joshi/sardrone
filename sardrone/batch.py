@@ -114,13 +114,16 @@ def is_done(manifest: list[dict], episode_id: str, episode_dir: Path) -> bool:
 # ---- running one episode -----------------------------------------------------
 
 
-def _search_command(row: VariationRow, world_dir: Path, mcap: Path, fake: bool, detector: str = "oracle") -> list[str]:
+def _search_command(row: VariationRow, world_dir: Path, mcap: Path, fake: bool, detector: str = "oracle",
+                    second_pass: bool = False) -> list[str]:  # fmt: skip
     command = [
         sys.executable, "-m", "sardrone.mission.search",
         "--world-dir", str(world_dir), "--out", str(mcap), "--overwrite",
     ]  # fmt: skip
     if detector != "oracle":
         command += ["--detector", detector]
+    if second_pass:
+        command += ["--second-pass"]
     return command + (["--fake"] if fake else [])
 
 
@@ -132,6 +135,7 @@ def run_episode(
     timeout_s: float = 900.0,
     fake: bool = False,
     detector: str = "oracle",
+    second_pass: bool = False,
 ) -> EpisodeResult:
     """Generate the world and fly it. Never raises for an ordinary failure:
     the batch must survive one bad episode."""
@@ -154,7 +158,7 @@ def run_episode(
         with open(log_dir / "search.log", "w") as log:
             try:
                 done = subprocess.run(
-                    _search_command(row, paths.folder, mcap, fake, detector),
+                    _search_command(row, paths.folder, mcap, fake, detector, second_pass),
                     cwd=PROJECT_ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=timeout_s,
                 )  # fmt: skip
             except subprocess.TimeoutExpired:
@@ -285,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
         help="'oracle', or a model version (closed loop). With a model, give --episode-dir too, "
         "so these episodes do not replace the oracle ones.",
     )  # fmt: skip
+    parser.add_argument("--second-pass", action="store_true", help="add a lower pass over tree cover")
+    parser.add_argument("--ids", help="comma-separated episode ids to run")
     parser.add_argument("--timeout", type=float, default=900.0, help="seconds per episode")
     parser.add_argument("--max-attempts", type=int, default=2)
     args = parser.parse_args(argv)
@@ -294,6 +300,9 @@ def main(argv: list[str] | None = None) -> int:
         rows = [row for row in rows if row.id == args.only]
     if args.prefix:
         rows = [row for row in rows if row.id.startswith(args.prefix)]
+    if args.ids:
+        wanted = set(args.ids.split(","))
+        rows = [row for row in rows if row.id in wanted]
     if args.limit:
         rows = rows[: args.limit]
     if args.detector != "oracle" and args.episode_dir == DEFAULT_EPISODE_DIR:
@@ -304,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     def runner(row: VariationRow) -> EpisodeResult:
         return run_episode(
             row, episode_dir=args.episode_dir, world_root=args.world_root,
-            timeout_s=args.timeout, fake=args.fake, detector=args.detector,
+            timeout_s=args.timeout, fake=args.fake, detector=args.detector, second_pass=args.second_pass,
         )  # fmt: skip
 
     started = time.monotonic()

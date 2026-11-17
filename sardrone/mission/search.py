@@ -108,6 +108,8 @@ class SearchConfig:
     # A report within this distance of a true person counts as finding them.
     match_radius_m: float = 3.0
     missed_rescue_min_frames: int = 10  # "was visible": in at least this many frames
+    # A second, lower pass over tree cover after the main search (None = off).
+    second_pass_altitude_m: float | None = None
     rate_hz: float = 10.0
     reach_tolerance_m: float = 1.0
     arrive_speed_m_s: float = 0.5
@@ -133,10 +135,16 @@ class SearchRecorder(FlightRecorder):
         config: SearchConfig | None = None,
         truth: list[dict] | None = None,
         ground_z: float = 0.0,
+        cover_polygon: list[Point] | None = None,
         sleep=asyncio.sleep,
         start_wall_ns: int | None = None,
     ):
         config = config or SearchConfig()
+        # Where trees stand, as (north, east) corners: map knowledge the
+        # mission is given, like a land-cover layer. Only used by the second pass.
+        self.cover_polygon = cover_polygon
+        self.second_plan: CoveragePlan | None = None
+        self._search_altitude_m = config.altitude_m
         super().__init__(
             drone,
             episode,
@@ -472,11 +480,49 @@ class SearchRecorder(FlightRecorder):
             self._event(EVENT_FALSE_ALARM, f"{name} in view for only {frames} frames")
             self._enter(RESUME, "not confirmed")
         await self._fly_line(
-            (resume_at[0], resume_at[1], self._down_for(self.config.altitude_m)),
+            (resume_at[0], resume_at[1], self._down_for(self._search_altitude_m)),
             self.config.search_speed_m_s,
             "return to the search lane",
         )
         self._yaw_deg = resume_yaw
+
+    async def _fly_waypoints(self, waypoints, altitude_m: float, primary: bool) -> str:
+        """Fly a list of lane waypoints at `altitude_m`, handling sightings
+        on the way. Returns "search complete" or "battery low"."""
+        config = self.config
+        self._search_altitude_m = altitude_m
+        down = self._down_for(altitude_m)
+        index = 0
+        while index < len(waypoints):
+            waypoint = waypoints[index]
+            # On a lane the nose points along the lane, so the camera sweeps
+            # the strip it was planned for, also right after an interruption.
+            lane_yaw = None
+            if waypoint.kind == "lane_end":
+                begin = waypoints[index - 1]
+                lane_yaw = bearing_deg((begin.north_m, begin.east_m), (waypoint.north_m, waypoint.east_m))
+            interruption = await self._fly_line(
+                (waypoint.north_m, waypoint.east_m, down),
+                config.search_speed_m_s,
+                f"reach {waypoint.kind} of lane {waypoint.lane}",
+                yaw_deg=lane_yaw,
+                watch=self._watch_search,
+            )
+            if interruption is None:
+                label = "lane" if primary else "second-pass lane"
+                self._event(EVENT_WAYPOINT_REACHED, f"{label} {waypoint.lane} {waypoint.kind}")
+                if waypoint.kind == "lane_end" and primary:
+                    self._lanes_done += 1
+                index += 1
+                continue
+            kind, sighting = interruption
+            if kind == "battery":
+                return "battery low"
+            await self._handle_sighting(sighting)
+            if self._battery_low():
+                return "battery low"
+            self._enter(SEARCH, "back on the lane")
+        return "search complete"
 
     # ---- the mission --------------------------------------------------------
 
@@ -506,39 +552,29 @@ class SearchRecorder(FlightRecorder):
 
         self._planned_path = [home] + [(w.north_m, w.east_m) for w in self.coverage.waypoints]
         self._enter(SEARCH, f"{self.coverage.lanes} lanes, {self.coverage.spacing_m:.0f} m apart")
-        reason = "search complete"
-        index = 0
-        waypoints = self.coverage.waypoints
-        while index < len(waypoints):
-            waypoint = waypoints[index]
-            # On a lane the nose points along the lane, so the camera sweeps
-            # the strip it was planned for, also right after an interruption.
-            lane_yaw = None
-            if waypoint.kind == "lane_end":
-                begin = waypoints[index - 1]
-                lane_yaw = bearing_deg((begin.north_m, begin.east_m), (waypoint.north_m, waypoint.east_m))
-            interruption = await self._fly_line(
-                (waypoint.north_m, waypoint.east_m, cruise_down),
-                config.search_speed_m_s,
-                f"reach {waypoint.kind} of lane {waypoint.lane}",
-                yaw_deg=lane_yaw,
-                watch=self._watch_search,
+        reason = await self._fly_waypoints(self.coverage.waypoints, config.altitude_m, primary=True)
+
+        if reason == "search complete" and config.second_pass_altitude_m and self.cover_polygon:
+            # Second pass: lower, and at right angles to the first, over the
+            # part of the area with tree cover. Lower makes people larger;
+            # crossing the first lanes looks under the canopies from another
+            # side. Every miss in the first closed-loop batch was a person
+            # under trees.
+            low_view = footprint(self.model, config.second_pass_altitude_m - self.ground_z, config.min_person_px)
+            here = (self.state.north_m, self.state.east_m)
+            self.second_plan = lawnmower(
+                self.cover_polygon, low_view, overlap=config.overlap,
+                heading_deg=(self.coverage.heading_deg + 90.0) % 180.0, start=here,
+            )  # fmt: skip
+            self._planned_path += [(w.north_m, w.east_m) for w in self.second_plan.waypoints]
+            self._event(
+                EVENT_STATE,
+                f"SEARCH second pass: {self.second_plan.lanes} lanes at "
+                f"{config.second_pass_altitude_m:g} m over tree cover",
             )
-            if interruption is None:
-                self._event(EVENT_WAYPOINT_REACHED, f"lane {waypoint.lane} {waypoint.kind}")
-                if waypoint.kind == "lane_end":
-                    self._lanes_done += 1
-                index += 1
-                continue
-            kind, sighting = interruption
-            if kind == "battery":
-                reason = "battery low"
-                break
-            await self._handle_sighting(sighting)
-            if self._battery_low():
-                reason = "battery low"
-                break
-            self._enter(SEARCH, "back on the lane")
+            reason = await self._fly_waypoints(
+                self.second_plan.waypoints, config.second_pass_altitude_m, primary=False
+            )
 
         if reason == "battery low":
             self._event(EVENT_BATTERY_LOW, f"{self.state.battery_percent:.0f} %")
@@ -570,6 +606,12 @@ class SearchRecorder(FlightRecorder):
                 "overlap": round(coverage.overlap, 3),
                 "lane_heading_deg": round(coverage.heading_deg, 1),
                 "planned_path_m": round(coverage.path_length_m(), 1),
+                "second_pass": None if self.second_plan is None else {
+                    "altitude_m": self.config.second_pass_altitude_m,
+                    "lanes": self.second_plan.lanes,
+                    "lane_heading_deg": round(self.second_plan.heading_deg, 1),
+                    "planned_path_m": round(self.second_plan.path_length_m(), 1),
+                },
             },
             "transitions": [state for state, _ in self.transitions],
             "reports": self.reports,
@@ -635,6 +677,7 @@ async def run_search(
     config: SearchConfig | None = None,
     detector: Detector | None = None,
     ground_z: float = 0.0,
+    cover_polygon: list[Point] | None = None,
     sleep=asyncio.sleep,
     start_wall_ns: int | None = None,
     overwrite: bool = False,
@@ -661,7 +704,7 @@ async def run_search(
             recorder = SearchRecorder(
                 drone, episode, camera,
                 polygon=polygon, detector=detector, config=config, truth=truth,
-                ground_z=ground_z, sleep=sleep, start_wall_ns=start_wall_ns,
+                ground_z=ground_z, cover_polygon=cover_polygon, sleep=sleep, start_wall_ns=start_wall_ns,
             )  # fmt: skip
             try:
                 await recorder.run()
@@ -700,6 +743,30 @@ def square_polygon(side_m: float) -> list[Point]:
     return [(-half, -half), (half, -half), (half, half), (-half, half)]
 
 
+def tree_cover_polygon(spec: dict, margin_m: float = 2.0) -> list[Point] | None:
+    """A rectangle around all trees and their canopies, cut to the search
+    area: (north, east) corners. None if the world has no trees.
+
+    This is the simplest possible land-cover map. In a meadow with a few
+    scattered trees it covers most of the area, and the second pass then
+    costs nearly a second search.
+    """
+    from sardrone.worlds.assets import TREES
+
+    if not spec["trees"]:
+        return None
+    half = spec["area_m"] / 2
+    reach = [
+        (t["x"], t["y"], max(abs(v) for v in TREES[t["kind"]].lo[:2] + TREES[t["kind"]].hi[:2]) * t["scale"] + margin_m)
+        for t in spec["trees"]
+    ]
+    east0 = max(-half, min(x - r for x, _, r in reach))
+    east1 = min(half, max(x + r for x, _, r in reach))
+    north0 = max(-half, min(y - r for _, y, r in reach))
+    north1 = min(half, max(y + r for _, y, r in reach))
+    return [(north0, east0), (north1, east0), (north1, east1), (north0, east1)]
+
+
 def safe_confirm_altitude(spec: dict, wanted_m: float, margin_m: float = 3.0) -> float:
     """Never circle lower than the tallest tree plus a margin."""
     from sardrone.worlds.assets import TREES
@@ -722,6 +789,8 @@ def main(argv: list[str] | None = None) -> int:
     )  # fmt: skip
     parser.add_argument("--confidence", type=float, help="detector cut-off (default: the one in the scorecard)")
     parser.add_argument("--device", default="mps")
+    parser.add_argument("--second-pass", action="store_true",
+                        help="after the search, fly a lower pass over the tree cover")  # fmt: skip
     parser.add_argument(
         "--prompt", default="Search the area, confirm and report every person, then return home."
     )
@@ -730,6 +799,11 @@ def main(argv: list[str] | None = None) -> int:
     spec, truth, extra = world_settings(args.world_dir)
     config = SearchConfig(altitude_m=spec["altitude_m"], battery_rtl_percent=args.battery_rtl)
     config.confirm_altitude_m = safe_confirm_altitude(spec, config.confirm_altitude_m)
+    cover = None
+    if args.second_pass:
+        cover = tree_cover_polygon(spec)
+        # As low as is safe above the trees, and never above the main search.
+        config.second_pass_altitude_m = min(spec["altitude_m"], max(15.0, safe_confirm_altitude(spec, 10.0)))
     ground_z = -spec["drone_body_height_m"]
     meta = EpisodeMeta(
         world=spec["world"], weather=spec["weather"], time_of_day=spec["time_of_day"],
@@ -787,7 +861,8 @@ def main(argv: list[str] | None = None) -> int:
         episode, recorder = asyncio.run(
             run_search(
                 drone, path, meta, camera=camera, polygon=square_polygon(spec["area_m"]),
-                truth=truth, config=config, detector=detector, ground_z=ground_z, sleep=sleep,
+                truth=truth, config=config, detector=detector, ground_z=ground_z, cover_polygon=cover,
+                sleep=sleep,
                 overwrite=args.overwrite, extra_sidecar=extra,
             )  # fmt: skip
         )
