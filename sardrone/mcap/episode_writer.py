@@ -82,6 +82,8 @@ EVENT_BATTERY_LOW = "battery_low"
 # Detection in the loop (Phase 3D).
 EVENT_TARGET_ACQUIRED = "target_acquired"  # a track was seen often enough to be believed
 EVENT_TARGET_LOST = "target_lost"  # a track was not re-found within the tracker's memory
+# Mission agent (Phase 4A).
+EVENT_AGENT = "agent"  # one decision of the language-model agent: a tool call and its outcome
 KNOWN_EVENTS = (
     EVENT_TAKEOFF,
     EVENT_WAYPOINT_REACHED,
@@ -95,6 +97,7 @@ KNOWN_EVENTS = (
     EVENT_BATTERY_LOW,
     EVENT_TARGET_ACQUIRED,
     EVENT_TARGET_LOST,
+    EVENT_AGENT,
 )
 
 # /telemetry has no matching Foxglove schema, so it is our own message type.

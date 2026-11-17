@@ -265,3 +265,45 @@ def test_cost_is_computed_only_from_given_prices():
                 "output_tokens": 500_000, "latency_s": 2.0}]  # fmt: skip
     assert summarise("m", results)["cost_usd"] is None
     assert summarise("m", results, price_in=2.5, price_out=10.0)["cost_usd"] == 10.0  # 2 x 2.5 + 0.5 x 10
+
+
+# ---- decisions on the episode timeline ----------------------------------------
+
+
+def test_agent_decisions_are_written_to_events(tmp_path):
+    from sardrone.agent.record import record_mission
+    from sardrone.mcap.episode_writer import TOPIC_EVENTS
+    from tests.conftest import START_NS, Episode
+
+    mission = MISSIONS["m02"]  # red jacket only: the baseline confirms two people and reports one
+    path = tmp_path / "agent.mcap"
+    _, transcript, checks = record_mission(RuleBasedModel(), mission, path, start_wall_ns=START_NS)
+    assert all(checks.values())
+
+    episode = Episode(path)
+    messages = [log.message for log in episode.decoded(TOPIC_EVENTS)]
+    assert messages[0] == f"agent: mission: {mission['prompt']}"
+    assert messages[1] == 'agent: set_search_area({"area": "south field"}) -> ok'
+    assert messages[-1] == "agent: ended: returned_home"
+    # One event per tool call, plus the mission line and the ending line.
+    assert len(messages) == len(transcript.steps) + 2
+    assert sum("report_person" in m for m in messages) == 1 and sum("confirm_target" in m for m in messages) == 2
+    times = episode.log_times(TOPIC_EVENTS)
+    assert times[0] == START_NS and times == sorted(times)
+
+    sidecar = json.loads(path.with_suffix(".json").read_text())
+    assert sidecar["success"] is True and sidecar["agent_model"] == "rule-based"
+    assert sidecar["mission_prompt"] == mission["prompt"] and sidecar["people_found"] == 1
+    assert sidecar["agent_tools"] == transcript.tool_names()
+    assert sidecar["event_counts"] == {"agent": len(messages)}
+
+
+def test_a_failed_mission_is_recorded_as_failed(tmp_path):
+    from sardrone.agent.record import record_mission
+    from tests.conftest import START_NS
+
+    path = tmp_path / "agent.mcap"
+    _, _, checks = record_mission(RuleBasedModel(), MISSIONS["m15"], path, start_wall_ns=START_NS)
+    sidecar = json.loads(path.with_suffix(".json").read_text())
+    assert sidecar["success"] is False
+    assert sidecar["agent_checks"]["reported_exactly_the_right_people"] is False
