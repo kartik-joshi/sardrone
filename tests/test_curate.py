@@ -275,3 +275,30 @@ def test_domain_separability_is_half_for_one_domain_and_one_for_two():
     assert domain_separability(cloud[:200], cloud[200:] + 10.0) == pytest.approx(1.0, abs=0.01)
     # Unequal sizes are balanced first, so "always say the big one" cannot score above 50 %.
     assert domain_separability(cloud[:50], cloud[50:]) == pytest.approx(0.5, abs=0.15)
+
+
+def test_false_alarm_boxes_use_the_scorecard_matching(predicted):
+    from sardrone.fo.false_alarms import false_alarm_boxes
+
+    # Frame 1 (see the `predicted` fixture): a hit at 0.25 and a false box at 0.08.
+    sample = frame(predicted, 1)
+    found = false_alarm_boxes(sample.ground_truth, sample[autolabel.FIELD], confidence=0.05)
+    assert [round(d.confidence, 2) for d in found] == [0.08]
+    assert false_alarm_boxes(sample.ground_truth, sample[autolabel.FIELD], confidence=0.1) == []  # cut off
+    # Frame 3: the box is shifted (IoU 0.43 < 0.5), so it counts as a false alarm.
+    sample = frame(predicted, 3)
+    assert len(false_alarm_boxes(sample.ground_truth, sample[autolabel.FIELD], confidence=0.05)) == 1
+    # Frame 5: no prediction, nothing to count.
+    assert false_alarm_boxes(frame(predicted, 5).ground_truth, frame(predicted, 5)[autolabel.FIELD], 0.05) == []
+
+
+def test_mark_frames_fills_the_false_alarm_view(predicted):
+    from sardrone.fo.false_alarms import mark_frames
+
+    curate.assign_splits(predicted)
+    curate.save_views(predicted)
+    summary = mark_frames(predicted, autolabel.FIELD, confidence=0.05)
+    # False boxes: frame 1 (0.08), frame 2 (0.12, nobody there), frame 3 (shifted).
+    assert summary == {"frames": 6, "frames_with_false_alarms": 3, "false_alarm_boxes": 3}
+    review = predicted.load_saved_view(curate.VIEW_FALSE_ALARMS)
+    assert sorted(s.filepath[-11:] for s in review) == ["frame_1.jpg", "frame_2.jpg", "frame_3.jpg"]

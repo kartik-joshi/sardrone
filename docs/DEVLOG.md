@@ -1132,3 +1132,39 @@ What the curves show that the numbers do not:
 
 One training run per version; given the seed spread (0.054 mAP for v4),
 the exact crossing point and maximum recalls will move between runs.
+
+## False alarms: what fools the detector (2026-11-17)
+
+`python -m sardrone.fo.false_alarms --version v4` marks every box at or
+above the model's cut-off that matches no true person (IoU below 0.5),
+using the scorecard's matching.
+
+**Simulated frames.** The Phase 2E view `sar-false-alarms`, empty until
+now, holds the frames where v4 made one: 114 of 2,861 validation frames
+(159 boxes) and 225 of 7,453 sim-test frames (241 boxes).
+
+**Real photos.** The 24 most confident false alarms of each model, cut out
+(`docs/images/v4_false_alarms_real.jpg`, `v6_false_alarms_real.jpg`):
+
+- **v4: all 24 are one red car parked on grass**, in different frames,
+  at confidence 0.89 to 0.91. That is why v4's precision-recall curve
+  starts at 0.77: its most confident boxes on real images are that car.
+- **v6: the red car is gone from the top; silver and navy cars took its
+  place**, at 0.82 to 0.91.
+
+Reading: v4 trained on worlds where the only bright, compact thing on
+grass is a person, so "red blob on grass" became a person. v6's worlds
+had 21 clothing colours (greys and navy among them) and coloured boxes
+lying around as distractors, which broke the link to red but not to
+"car-sized coloured blob on grass". Neither the simulated worlds nor the
+300 real images showed a car. (The real training pool is SARD frames 1 to
+621; these car scenes are frames 924 to 1,091, in the test half. Whether
+the pool shows any car was not checked.)
+
+This is the data loop's "review the real images that still fail" step,
+and it names the next piece of data: vehicles and other large man-made
+objects as unlabelled distractors in the worlds, or real images that
+contain them.
+
+Counts are not compared across models here: v4 and v6 have different
+cut-offs (0.378 and 0.140), so v6 draws far more boxes in total.

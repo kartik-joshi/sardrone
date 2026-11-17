@@ -58,6 +58,9 @@ never finds more than 69 % of the people; v4 and v6 reach 80 % and 82 %.
 
 ![Precision-recall curves](docs/images/pr_curves.png)
 
+Reviewing the real images that fool it: all 24 of v4's most confident
+mistakes are one red car on grass. The simulated worlds have no vehicles.
+
 **3. With the detector in the loop, the drone found 39 of 45 people** across
 15 unseen simulated worlds, with no false reports. All six misses were in
 forest worlds, five of them people under trees.

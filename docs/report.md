@@ -198,6 +198,17 @@ and rescue, where a missed person costs more than a false alarm, the
 high-recall end is the part that matters, and there the trained models
 lead. mAP, which averages the whole curve, does not show this.
 
+### What the detector mistakes for people
+
+The 24 most confident false alarms on the real test images were reviewed
+by eye. For v4 all 24 are one red car on grass, seen in different frames.
+For v6, trained on worlds with 21 clothing colours and coloured
+distractor boxes, the red car disappears from the top, and silver and
+navy cars take its place. The simulated worlds contain no vehicles, so
+nothing taught the detector that a compact coloured object on grass can
+be something other than a person. Vehicles as unlabelled distractors are
+the obvious next addition to the generator.
+
 ### Run-to-run variation
 
 Source: `docs/results/seed_runs.csv`. The same recipe trained again with
