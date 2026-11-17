@@ -293,6 +293,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ids", help="comma-separated episode ids to run")
     parser.add_argument("--timeout", type=float, default=900.0, help="seconds per episode")
     parser.add_argument("--max-attempts", type=int, default=2)
+    parser.add_argument("--min-free-gb", type=float, default=3.0, help="stop before free disk drops below this")
     args = parser.parse_args(argv)
 
     rows = load_matrix(args.matrix)
@@ -320,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         counts = run_batch(
             rows, manifest_path=manifest, episode_dir=args.episode_dir, runner=runner,
-            max_attempts=args.max_attempts,
+            max_attempts=args.max_attempts, min_free_gb=args.min_free_gb,
         )  # fmt: skip
     except KeyboardInterrupt:
         print(f"\ninterrupted - run the same command again to continue. Manifest: {manifest}")
