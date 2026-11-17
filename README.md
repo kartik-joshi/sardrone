@@ -221,7 +221,8 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   position instead.
 - **The mission agent has not been run with a language model.** The
   evaluation harness and a rule-based baseline exist; the Cohere back-end
-  is written against the SDK but untested against the live API.
+  is checked offline against the SDK's own request and response types,
+  but has not called the live API.
 - **The retraining gate's threshold (200 hard frames) is not tuned.**
 
 ## Licences and credits

@@ -1185,3 +1185,25 @@ Rendered once to check they read as cars from the drone's height.
 for v7: v6's recipe (randomized worlds, camera realism, the same 300 real
 images) on these worlds, then check whether cars still top the list of
 confident mistakes on real photos.
+
+## The Cohere adapter, checked offline (2026-11-17)
+
+Before spending trial-key calls, `tests/test_agent_cohere.py` checks the
+adapter against the installed SDK (cohere 7.3.1) without any network call:
+
+- A whole mission (seven tool calls) is run through the adapter with a
+  stand-in client. Every request is checked against the SDK's own types:
+  each message as `SystemChatMessageV2`, `UserChatMessageV2`,
+  `AssistantChatMessageV2` or `ToolChatMessageV2`, each tool call as
+  `ToolCallV2` with JSON-string arguments, each tool as `ToolV2`.
+- Responses are built with `V2ChatResponse` (what `ClientV2.chat` returns,
+  per its return annotation) and parsed back into the right tool name,
+  arguments, text and token counts.
+- The text-answer path (the loop's one reminder) gives a valid
+  conversation too.
+- The SDK's models do reject malformed messages (missing `tool_call_id`,
+  wrong `type`, arguments as a dict instead of a string, wrong role), so
+  the validation means something.
+
+What this still cannot show: that the live API accepts the request, that
+a trial key allows tool use, or how well a Cohere model does the missions.
