@@ -1003,3 +1003,48 @@ Practical rule from this: on this setup, a real-image difference smaller
 than about 0.06 between two single training runs means nothing. The
 headline differences (0.01 against 0.55, or 0.13 against 0.55) are far
 outside that.
+
+## A second, lower pass over tree cover (2026-11-17)
+
+Question: every closed-loop miss was in a forest-edge world, five of six
+under trees. Does a second pass, lower and at right angles to the first,
+over the tree-covered part of the area, find them?
+
+- `search --second-pass`: after the main lanes, the drone flies a second
+  lawnmower over a rectangle around all tree canopies (the simplest
+  land-cover map), at the lowest safe altitude (15 m here), with lanes at
+  90 degrees to the first. Commit 30c8c68 plus the batch flag in 72e37a3.
+- Flown on PX4 SITL on the five forest-edge sim-test worlds with the same
+  detector (v4) and settings as the first closed-loop batch. 65.7 minutes.
+  Table: `docs/results/closed_loop_v4_second_pass.md`.
+
+| World | Altitude | Under trees | Found, one pass | Found, with second pass | False reports | False alarms | Flight time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| test-003 | 40 m | yes | 0 of 2 | 1 of 2 | 0 -> 0 | 0 -> 2 | 155 -> 447 s |
+| test-004 | 25 m | yes | 4 of 5 | 4 of 5 | 0 -> 0 | 0 -> 4 | 362 -> 798 s |
+| test-007 | 25 m | no | 4 of 5 | 5 of 5 | 0 -> 2 | 0 -> 7 | 333 -> 1222 s |
+| test-012 | 40 m | yes | 0 of 1 | 0 of 1 | 0 -> 0 | 0 -> 1 | 154 -> 265 s |
+| test-014 | 25 m | yes | 1 of 2 | 2 of 2 | 0 -> 0 | 3 -> 5 | 436 -> 789 s |
+| **Total** | | | **9 of 15** | **12 of 15** | **0 -> 2** | **3 -> 19** | **1440 -> 3521 s** |
+
+- **It found three more people (9 to 12 of 15).**
+- **It reported two people who were not there**, both in test-007. Before,
+  the closed loop had made no false report in 15 worlds.
+- **False alarms rose from 3 to 19**, each one a descent and an orbit, and
+  total flight time grew 2.4 times.
+
+Why: from 15 m the camera sees trees, trunks and canopy shadows large and
+close, and the detector, trained on people seen from 15 to 40 m over open
+ground, fires on them far more often. Most of those tracks are rejected by
+the confirmation orbit, but not all.
+
+So the second pass trades precision and time for recall. For search and
+rescue a missed person is usually worse than a wasted detour, so the trade
+can be right, but two false reports in five worlds is not acceptable as
+is. The obvious next step is a stricter confirmation (more frames, or a
+higher confidence cut-off) during the low pass only. Not done.
+
+How far to trust this: five worlds, one flight each with and without, so
+15 people in all. The closed-loop flights themselves vary from run to run
+(detector timing, PX4 noise); the first batch was not repeated. Read the
+totals as a direction, not a measurement.
