@@ -786,3 +786,63 @@ def test_the_same_spot_is_never_reported_twice(tmp_path):
     assert ("RESUME", "already reported as target_1") in recorder.transitions
     # After one duplicate the target is remembered where it was sighted: no endless re-confirming.
     assert metrics["duplicates_avoided"] == 1
+
+
+class FlickeringGhosts(LowOnlyDetector):
+    """People are seen only from below 20 m (as in the second-pass test),
+    and from low there are also ghosts: false boxes that flicker into view
+    for 4 frames at a time, every 25 frames, at a new place each time, as
+    canopy shadows do when the drone moves over them."""
+
+    def __init__(self, inner):
+        super().__init__(inner)
+        self.calls = 0
+
+    def detect(self, pose, jpeg=None):
+        found = super().detect(pose, jpeg)
+        self.calls += 1
+        if pose.position.z < 20.0 and self.calls % 25 < 4:
+            from sardrone.mission.projection import pixel_to_ground
+
+            box = BBox(600.0, 400.0, 620.0, 440.0)
+            ground = pixel_to_ground(self.inner.oracle.model, pose, 610.0, 440.0, -0.227)
+            if ground is not None:
+                found.append(Sighting(None, box, ground, 0.5))
+        return found
+
+
+def run_second_pass(tmp_path, name, **config_overrides):
+    _, truth = world_people(altitude_m=25.0)
+    folder = tmp_path / name
+    folder.mkdir()
+    drone = FakeDrone()
+    camera = SyntheticCamera(width=1280, height=960, hfov_deg=99.7, pitch_deg=45.0)
+    meta = EpisodeMeta(world="forest_edge", weather="clear", time_of_day="noon", mission_prompt="search")
+    config = SearchConfig(altitude_m=25.0, second_pass_altitude_m=15.0, **config_overrides)
+    path = folder / "search.mcap"
+    asyncio.run(
+        run_search(
+            drone, path, meta, camera=camera, polygon=square_polygon(60.0), truth=truth, config=config,
+            detector=FlickeringGhosts(nameless(truth)), ground_z=-0.227,
+            cover_polygon=[(-30.0, -30.0), (30.0, -30.0), (30.0, 30.0), (-30.0, 30.0)],
+            sleep=drone.sleep, start_wall_ns=START_NS,
+        )  # fmt: skip
+    )
+    return json.loads(path.with_suffix(".json").read_text())
+
+
+def test_strict_second_pass_ignores_flickering_ghosts_and_still_finds_people(tmp_path):
+    loose = run_second_pass(tmp_path, "loose")
+    strict = run_second_pass(tmp_path, "strict", second_pass_track_min_hits=6, second_pass_confirm_min_frames=20)
+    # Ghosts last 4 frames: enough for a 3-hit track, never for a 6-hit one.
+    # They also reappear near the middle of an orbit, often enough to pass
+    # the 10-frame confirmation, so the loose setting REPORTS them.
+    loose_detours = loose["transitions"].count("CONFIRM") - 3
+    assert loose_detours >= 5 and loose["mission_metrics"]["false_reports"] >= 5
+    assert strict["transitions"].count("CONFIRM") == 3, "one detour per real person, none for ghosts"
+    assert strict["mission_metrics"]["false_reports"] == 0 and strict["mission_metrics"]["false_alarms"] == 0
+    assert strict["mission_metrics"]["people_found"] == loose["mission_metrics"]["people_found"] == 3
+    assert strict["duration_s"] < loose["duration_s"], "fewer detours, shorter flight"
+    assert strict["search"]["second_pass"]["track_min_hits"] == 6
+    assert strict["search"]["second_pass"]["confirm_min_frames"] == 20
+    assert loose["search"]["second_pass"]["track_min_hits"] == 3

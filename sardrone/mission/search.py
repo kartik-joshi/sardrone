@@ -110,6 +110,12 @@ class SearchConfig:
     missed_rescue_min_frames: int = 10  # "was visible": in at least this many frames
     # A second, lower pass over tree cover after the main search (None = off).
     second_pass_altitude_m: float | None = None
+    # Stricter rules during the second pass. From low over trees the
+    # detector sees trunks and canopy shadows large and close and fires on
+    # them far more often (19 false alarms against 3 in the first test).
+    # None = same as the main search.
+    second_pass_track_min_hits: int | None = None  # sightings before a track is acted on
+    second_pass_confirm_min_frames: int | None = None  # frames in view during the orbit
     rate_hz: float = 10.0
     reach_tolerance_m: float = 1.0
     arrive_speed_m_s: float = 0.5
@@ -145,6 +151,7 @@ class SearchRecorder(FlightRecorder):
         self.cover_polygon = cover_polygon
         self.second_plan: CoveragePlan | None = None
         self._search_altitude_m = config.altitude_m
+        self._in_second_pass = False
         super().__init__(
             drone,
             episode,
@@ -411,7 +418,10 @@ class SearchRecorder(FlightRecorder):
         # the box is the near side of the body). Seen from many sides,
         # those errors partly cancel, so the average beats any single view.
         mean = (sum(e[0] for e in estimates) / len(estimates), sum(e[1] for e in estimates) / len(estimates))
-        return frames >= config.confirm_min_frames, mean, frames
+        needed = config.confirm_min_frames
+        if self._in_second_pass and config.second_pass_confirm_min_frames:
+            needed = config.second_pass_confirm_min_frames
+        return frames >= needed, mean, frames
 
     def _already_reported_near(self, estimate: tuple[float, float]) -> str | None:
         """The target already reported within `same_person_radius_m` of
@@ -590,6 +600,9 @@ class SearchRecorder(FlightRecorder):
                 heading_deg=(self.coverage.heading_deg + 90.0) % 180.0, start=here,
             )  # fmt: skip
             self._planned_path += [(w.north_m, w.east_m) for w in self.second_plan.waypoints]
+            self._in_second_pass = True
+            if config.second_pass_track_min_hits:
+                self.tracker.min_hits = config.second_pass_track_min_hits
             self._event(
                 EVENT_STATE,
                 f"SEARCH second pass: {self.second_plan.lanes} lanes at "
@@ -634,6 +647,8 @@ class SearchRecorder(FlightRecorder):
                     "lanes": self.second_plan.lanes,
                     "lane_heading_deg": round(self.second_plan.heading_deg, 1),
                     "planned_path_m": round(self.second_plan.path_length_m(), 1),
+                    "track_min_hits": self.tracker.min_hits,
+                    "confirm_min_frames": self.config.second_pass_confirm_min_frames or self.config.confirm_min_frames,
                 },
             },
             "transitions": [state for state, _ in self.transitions],
@@ -815,6 +830,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", default="mps")
     parser.add_argument("--second-pass", action="store_true",
                         help="after the search, fly a lower pass over the tree cover")  # fmt: skip
+    parser.add_argument("--strict-second-pass", action="store_true",
+                        help="during the second pass, act on a track only after 6 sightings and "
+                             "confirm only after 20 frames in view")  # fmt: skip
     parser.add_argument(
         "--prompt", default="Search the area, confirm and report every person, then return home."
     )
@@ -828,6 +846,8 @@ def main(argv: list[str] | None = None) -> int:
         cover = tree_cover_polygon(spec)
         # As low as is safe above the trees, and never above the main search.
         config.second_pass_altitude_m = min(spec["altitude_m"], max(15.0, safe_confirm_altitude(spec, 10.0)))
+        if args.strict_second_pass:
+            config.second_pass_track_min_hits, config.second_pass_confirm_min_frames = 6, 20
     ground_z = -spec["drone_body_height_m"]
     meta = EpisodeMeta(
         world=spec["world"], weather=spec["weather"], time_of_day=spec["time_of_day"],
