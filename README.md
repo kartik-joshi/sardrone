@@ -67,7 +67,10 @@ forest worlds, five of them people under trees.
 A second, lower pass over the tree cover raised that to 12 of 15 in the
 five forest worlds (from 9), at the cost of one phantom reported twice,
 six times as many false alarms and 2.4 times the flight time
-([table](docs/results/closed_loop_v4_second_pass.md)).
+([table](docs/results/closed_loop_v4_second_pass.md)). A stricter version
+(6 sightings before a detour, 20 frames to confirm) found 10 of 15 with no
+false report and 8 false alarms
+([table](docs/results/closed_loop_v4_strict_second_pass.md)).
 
 **4. An off-the-shelf auto-labeller is a first draft, not a labeller.**
 Scored against exact simulator labels, OWLv2 reached 90 % precision at 77 %

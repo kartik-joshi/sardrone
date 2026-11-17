@@ -278,12 +278,12 @@ Source: `docs/results/closed_loop_v4_second_pass.md`. The five forest-edge
 worlds flown again with the same detector, adding a second lawnmower at
 15 m over the tree-covered rectangle, at right angles to the first.
 
-| | One pass | With second pass |
-| --- | --- | --- |
-| People found | 9 of 15 | 12 of 15 |
-| False reports | 0 | 2 (one phantom, reported twice) |
-| False alarms rejected by the orbit | 3 | 19 |
-| Total flight time | 1,440 s | 3,521 s |
+| | One pass | With second pass | Strict second pass |
+| --- | --- | --- | --- |
+| People found | 9 of 15 | 12 of 15 | 10 of 15 |
+| False reports | 0 | 2 (one phantom, reported twice) | 0 |
+| False alarms rejected by the orbit | 3 | 19 | 8 |
+| Total flight time | 1,440 s | 3,521 s | 2,548 s |
 
 The low pass finds people the high pass could not, and sees trees large
 enough for the detector to mistake far more often. One flight per world.
@@ -379,6 +379,6 @@ mission is unaffected because identity is decided from ground position.
 4. Widen the simulated content (more bodies, vegetation, terrain) before
    spending more on rendering fidelity, since content is where the domains
    differ.
-5. Make confirmation stricter during the low pass over trees (more
-   frames, or a higher cut-off), to keep its recall without its false
-   reports.
+5. Find a confirmation rule for the low pass that keeps more of its
+   extra finds: the strict version (6 sightings, 20 frames) removed the
+   false reports but also two of the three extra people.

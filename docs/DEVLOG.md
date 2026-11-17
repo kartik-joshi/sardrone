@@ -1242,3 +1242,38 @@ seeds: simulation-only training collapses on real images; a few hundred
 real images restore most of it; nothing tried on the simulation side
 (randomization, camera realism) measurably helps real images; and no
 recipe here beats the untrained network on real images by mAP.
+
+## Strict second pass flown (2026-11-17)
+
+The five forest-edge worlds again, detector v4, with `--strict-second-pass`
+(during the low pass a track needs 6 sightings before a detour, and the
+orbit must hold the target 20 frames) and the duplicate-report fix. 47.8
+minutes. Table: `docs/results/closed_loop_v4_strict_second_pass.md`.
+
+| Five forest worlds, v4 | People found | False reports | False alarms | Total flight time |
+| --- | --- | --- | --- | --- |
+| One pass | 9 of 15 | 0 | 3 | 1,440 s |
+| Second pass | 12 of 15 | 2 (one spot twice) | 19 | 3,521 s |
+| Strict second pass | 10 of 15 | 0 | 8 | 2,548 s |
+
+Per world (found): test-003 0 / 1 / 1, test-004 4 / 4 / 4, test-007
+4 / 5 / 4, test-012 0 / 0 / 0, test-014 1 / 2 / 1 (of 2, 5, 5, 1, 2).
+
+- **Strictness worked on what it targets:** no false report, false alarms
+  down from 19 to 8, flight time down by a quarter.
+- **It also gave back two of the three extra finds.** In test-007 and
+  test-014 the normal second pass found a person the strict one did not.
+  A real person under trees is itself seen only intermittently, so "6
+  sightings in a row" filters some of them out along with the ghosts.
+- **The trade-off is the usual one, now measured three ways.** No setting
+  here is free: more finds come with more detours.
+
+The second pass's two false reports were one phantom reported twice,
+before the duplicate fix. With the fix, re-flying that world gave none, so
+the normal second pass would probably have shown 0 or 1, not 2.
+
+How far to trust this: one flight per world per setting, 15 people. In
+test-007 the normal second pass found 5 of 5 once and 4 of 5 on a re-fly,
+so a single person's difference between settings is within run-to-run
+variation. The direction (strict fewer false alarms, fewer finds) is
+consistent across worlds; the size is not established.
