@@ -1069,4 +1069,15 @@ The test for it first passed without ever reaching the duplicate case
 a second time it switched modes during takeoff. It now forces the case and
 was checked to fail with the fix switched off.
 
-Not yet re-flown on PX4.
+Re-flown on PX4 (test-007, second pass, detector v4, commit 3263c54):
+
+| test-007 | Found | False reports | False alarms | Duplicates avoided | Flight time |
+| --- | --- | --- | --- | --- | --- |
+| second pass, before the fix | 5 of 5 | 2 (one spot twice) | 7 | (not counted) | 1222 s |
+| second pass, with the fix | 4 of 5 | 0 | 5 | 2 | 914 s |
+
+The duplicate reports are gone; twice the mission recognised a spot it
+had already reported. It found one person fewer this time; with one
+flight each, that is run-to-run variation in a closed loop (the missed
+person, person_3, was in view and not held long enough), not an effect of
+the fix, which only acts after a confirmation.

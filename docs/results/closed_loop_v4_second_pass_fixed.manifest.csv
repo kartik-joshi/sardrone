@@ -1,0 +1,2 @@
+episode_id,attempt,outcome,success,people_placed,people_found,detector,world,seed,duration_s,wall_s,size_mb,commit,dirty,started_utc,mcap,error,row
+test-007,1,completed,no,5,4,yolo:v4,forest_edge,97007,913.6,1034.5,384.1,3263c54,no,2026-11-17T14:00:50Z,test-007.mcap,,"{""altitude_m"": 25, ""area_m"": 60, ""camera_pitch_deg"": 45, ""id"": ""test-007"", ""occlusion"": ""none"", ""people"": 5, ""poses"": [], ""randomize"": false, ""seed"": 97007, ""time_of_day"": ""dusk"", ""weather"": ""clear"", ""world"": ""forest_edge""}"
