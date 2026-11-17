@@ -246,6 +246,24 @@ times. A report counts as a find if a true person is within 3 m.
 | Altitude 15 m / 25 m / 40 m | 14 of 14 / 14 of 17 / 11 of 14 |
 | Meadow / park / forest edge | 15 of 15 / 15 of 15 / 9 of 15 |
 
+### A second pass over tree cover
+
+Source: `docs/results/closed_loop_v4_second_pass.md`. The five forest-edge
+worlds flown again with the same detector, adding a second lawnmower at
+15 m over the tree-covered rectangle, at right angles to the first.
+
+| | One pass | With second pass |
+| --- | --- | --- |
+| People found | 9 of 15 | 12 of 15 |
+| False reports | 0 | 2 (one phantom, reported twice) |
+| False alarms rejected by the orbit | 3 | 19 |
+| Total flight time | 1,440 s | 3,521 s |
+
+The low pass finds people the high pass could not, and sees trees large
+enough for the detector to mistake far more often. One flight per world.
+The double report exposed a bug, since fixed: a confirmation that ends on
+an already-reported spot is no longer reported again.
+
 ### The auto-labeller
 
 Source: `docs/results/auto_labeler.md`. OWLv2 (base, patch 16, ensemble)
@@ -335,5 +353,6 @@ mission is unaffected because identity is decided from ground position.
 4. Widen the simulated content (more bodies, vegetation, terrain) before
    spending more on rendering fidelity, since content is where the domains
    differ.
-5. Add a low second pass over tree cover to the mission, since that is
-   where every miss occurred.
+5. Make confirmation stricter during the low pass over trees (more
+   frames, or a higher cut-off), to keep its recall without its false
+   reports.

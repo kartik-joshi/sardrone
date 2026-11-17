@@ -183,6 +183,7 @@ class SearchRecorder(FlightRecorder):
         # Bookkeeping for the mission metrics.
         self.visible_frames: dict[str, int] = {}  # person id -> frames with a ground-truth box
         self.false_alarms = 0
+        self.duplicates_avoided = 0  # confirmations that ended on an already-reported spot
         self._search_path: list[tuple[float, float]] = []  # positions flown while searching
         self._lanes_done = 0
         self._ade = {"all": [0.0, 0], "coasting": [0.0, 0]}  # sum of pixel errors, count
@@ -412,6 +413,15 @@ class SearchRecorder(FlightRecorder):
         mean = (sum(e[0] for e in estimates) / len(estimates), sum(e[1] for e in estimates) / len(estimates))
         return frames >= config.confirm_min_frames, mean, frames
 
+    def _already_reported_near(self, estimate: tuple[float, float]) -> str | None:
+        """The target already reported within `same_person_radius_m` of
+        this position, if any."""
+        east, north = estimate
+        for report in self.reports:
+            if math.hypot(east - report["east_m"], north - report["north_m"]) <= self.config.same_person_radius_m:
+                return report["target"]
+        return None
+
     def _match_truth(self, sighting: Sighting, east: float, north: float) -> tuple[str | None, float | None]:
         """Which true person does a report belong to, and how far off is it?
 
@@ -468,7 +478,20 @@ class SearchRecorder(FlightRecorder):
         self._event(EVENT_PERSON_SEEN, f"{name}, {size:.0f} px in the image")
         self._enter(CONFIRM, f"{name} sighted")
         confirmed, estimate, frames = await self._confirm(sighting)
-        if confirmed:
+        duplicate = self._already_reported_near(estimate) if confirmed else None
+        if confirmed and duplicate:
+            # The orbit ended on a spot that has been reported already: the
+            # same object, first sighted from far enough away that its rough
+            # position did not match. Reporting it again would send the
+            # rescue team to one place twice (the first second-pass flights
+            # did exactly that).
+            # Remember this target where it was SIGHTED (kept in _spots), so
+            # the next far-away sighting of it maps to it and is ignored.
+            self.confirmed.add(key)
+            self.duplicates_avoided += 1
+            self._event(EVENT_PERSON_CONFIRMED, f"{name} in view for {frames} frames, same place as {duplicate}")
+            self._enter(RESUME, f"already reported as {duplicate}")
+        elif confirmed:
             self._event(EVENT_PERSON_CONFIRMED, f"{name} in view for {frames} frames")
             self._enter(REPORT, name)
             self._report(sighting, estimate, frames, key)
@@ -656,6 +679,7 @@ class SearchRecorder(FlightRecorder):
             "missed_rescues": missed_rescues,  # visible in the images, never reported
             "false_reports": sum(1 for r in self.reports if not r["matched_person"]),
             "false_alarms": self.false_alarms,  # sightings the confirmation orbit rejected
+            "duplicates_avoided": self.duplicates_avoided,
             "time_to_first_find_s": min((r["time_s"] for r in true_reports), default=None),
             "mean_report_error_m": round(sum(errors) / len(errors), 2) if errors else None,
             "coverage_percent": coverage_percent,

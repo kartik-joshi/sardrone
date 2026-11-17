@@ -1029,7 +1029,9 @@ over the tree-covered part of the area, find them?
 
 - **It found three more people (9 to 12 of 15).**
 - **It reported two people who were not there**, both in test-007. Before,
-  the closed loop had made no false report in 15 worlds.
+  the closed loop had made no false report in 15 worlds. Looking at the
+  log, both reports are the SAME spot (0.4 m apart), 76 s apart: one
+  phantom, reported twice. See the bug below.
 - **False alarms rose from 3 to 19**, each one a descent and an orbit, and
   total flight time grew 2.4 times.
 
@@ -1048,3 +1050,23 @@ How far to trust this: five worlds, one flight each with and without, so
 15 people in all. The closed-loop flights themselves vary from run to run
 (detector timing, PX4 noise); the first batch was not repeated. Read the
 totals as a direction, not a measurement.
+
+### Bug found by the second pass: one spot reported twice
+
+In test-007 a phantom was reported as target_7 and again as target_8 at
+the same position. Targets without identity are told apart by where they
+were first sighted. The second sighting, from far away, was placed more
+than 4 m from the first report, so it counted as a new target; its orbit
+then converged on the same spot, and it was reported again.
+
+Fix: a confirmation whose final position is within 4 m of an existing
+report is not reported again; the target is remembered where it was
+sighted, so it is not re-confirmed either. Counted as
+`duplicates_avoided` in the mission metrics.
+
+The test for it first passed without ever reaching the duplicate case
+(the scenario never produced a second sighting far enough away), and then
+a second time it switched modes during takeoff. It now forces the case and
+was checked to fail with the fix switched off.
+
+Not yet re-flown on PX4.

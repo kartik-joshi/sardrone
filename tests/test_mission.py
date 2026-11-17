@@ -743,3 +743,46 @@ def test_tree_cover_polygon_wraps_the_trees_inside_the_area():
     assert north0 == pytest.approx(20.0 - 1.59 - 2.0)
     assert north1 == 30.0  # cut at the edge of the 60 m area
     assert tree_cover_polygon({"area_m": 60.0, "trees": []}) is None
+
+
+def test_the_same_spot_is_never_reported_twice(tmp_path):
+    """A target sighted from far away can get a rough position more than
+    4 m from where it was already reported, so it looks like a new target;
+    its orbit then ends on the reported spot. That must not be reported again.
+
+    The detector below forces exactly that: first visit, sightings from the
+    search altitude are 5 m east of the person and those from the orbit
+    2 m east (3 m apart, so the orbit confirms; the report lands at +2);
+    after that, sightings from the search altitude are 3 m WEST (5 m from
+    the report: a "new" target) and those from the orbit exactly on the
+    person (3 m from the sighting, so it confirms; 2 m from the report).
+    """
+    _, truth = world_people(poses=("standing",), people=1)
+
+    class Drifting(NamelessDetector):
+        def __init__(self, oracle):
+            super().__init__(oracle)
+            self.was_high, self.orbited, self.second_visit = False, False, False
+
+        def detect(self, pose, jpeg=None):
+            found = super().detect(pose, jpeg)
+            low = pose.position.z < 12.0
+            # Low AFTER having been high = the first orbit (takeoff passes
+            # below 12 m too, and must not count).
+            self.orbited |= low and self.was_high
+            self.second_visit |= self.orbited and not low
+            self.was_high |= not low
+            if not self.second_visit:
+                shift = 2.0 if low else 5.0
+            else:
+                shift = 0.0 if low else -3.0
+            return [Sighting(None, s.bbox, (s.ground_east_north[0] + shift, s.ground_east_north[1]), s.confidence)
+                    for s in found]  # fmt: skip
+
+    _, recorder, episode, sidecar = search(tmp_path, truth=truth, detector=Drifting(nameless(truth).oracle))
+    metrics = sidecar["mission_metrics"]
+    assert metrics["duplicates_avoided"] >= 1, "the scenario must reach the duplicate case"
+    assert len(sidecar["reports"]) == 1 and metrics["false_reports"] == 0 and metrics["people_found"] == 1
+    assert ("RESUME", "already reported as target_1") in recorder.transitions
+    # After one duplicate the target is remembered where it was sighted: no endless re-confirming.
+    assert metrics["duplicates_avoided"] == 1
