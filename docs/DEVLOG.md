@@ -1207,3 +1207,38 @@ adapter against the installed SDK (cohere 7.3.1) without any network call:
 
 What this still cannot show: that the live API accepts the request, that
 a trial key allows tool use, or how well a Cohere model does the missions.
+
+## v6 repeated with two more seeds (2026-11-17)
+
+The v6 export was rebuilt from scratch first (its export had been deleted
+to free disk); the hash matched the original, `1acc17da393128c2`, so the
+same images and labels were used. Commit 1a42819 and earlier; results in
+`docs/results/seed_runs.csv`.
+
+| Recipe | Seed 51 | Seed 52 | Seed 53 | Mean | Spread |
+| --- | --- | --- | --- | --- | --- |
+| v4 real (SARD) mAP@0.5 | 0.547 | 0.586 | 0.532 | 0.555 | 0.053 |
+| v6 real (SARD) mAP@0.5 | 0.597 | 0.526 | 0.587 | 0.570 | 0.072 |
+| v4 sim-test mAP@0.5 | 0.934 | 0.937 | 0.934 | 0.935 | 0.003 |
+| v6 sim-test mAP@0.5 | 0.926 | 0.925 | 0.930 | 0.927 | 0.005 |
+| v0, untrained, real | 0.591 | | | | |
+
+- **No measurable effect of randomization on real images, with or without
+  real data.** v6's mean is 0.015 above v4's; each recipe alone spreads
+  over 0.05 to 0.07. Three runs each cannot tell them apart. The first v6
+  run (0.597) was simply a lucky seed. The headline "randomization helped
+  once real data was present" is withdrawn, not just weakened.
+- **Randomization costs a little in simulation, consistently.** v6's three
+  simulated scores (0.925 to 0.930) are all below v4's (0.934 to 0.937).
+  Small, but the ranges do not overlap.
+- **Neither recipe beats the untrained network on real images.** Five of
+  the six runs are below v0's 0.591; one v6 run is 0.006 above it.
+- **v6 trades precision for recall**, at the cut-offs chosen on simulated
+  validation data: SARD recall 0.64 to 0.70 against v4's 0.57 to 0.64,
+  precision 0.51 to 0.58 against 0.70.
+
+What this leaves as the project's findings, all of which hold across
+seeds: simulation-only training collapses on real images; a few hundred
+real images restore most of it; nothing tried on the simulation side
+(randomization, camera realism) measurably helps real images; and no
+recipe here beats the untrained network on real images by mAP.

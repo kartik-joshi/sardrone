@@ -182,10 +182,11 @@ simulation, and is still far below v0. With an identical backbone, the
 difference from v0 lies in the neck and head, which learned to call only
 rendered figures a person.
 
-**Finding 6. Whether randomization helps once real data is present is not
-established.** v6 scored 0.597 against v4's 0.547, but v4 trained three
-times with different seeds scored 0.532, 0.547 and 0.586 (see "Run-to-run variation" below).
-The v6 advantage over the best v4 run is 0.011.
+**Finding 6. Randomization does not measurably help, even with real data.**
+The first v6 run scored 0.597 against v4's 0.547. Trained three times
+each, v4 averages 0.555 (0.532 to 0.586) and v6 0.570 (0.526 to 0.597):
+the difference is well inside either recipe's own spread. See
+"Run-to-run variation" below.
 
 ### Precision-recall curves
 
@@ -218,11 +219,14 @@ only the training seed changed:
 | --- | --- | --- |
 | v1 | 0.014, 0.011 | 0.003 |
 | v4 | 0.547, 0.586, 0.532 | 0.054 |
+| v6 | 0.597, 0.526, 0.587 | 0.072 |
 
 The bootstrap intervals in the scorecard cover the choice of test images,
 about plus or minus 0.02. Training variation is larger. Findings 1, 3, 4
-and 5 hold across seeds (v1's collapse is reproduced; every v4 run is
-below v0); finding 6 does not.
+and 5 hold across seeds (v1's collapse is reproduced; five of six v4 and
+v6 runs are below v0). The first version of finding 6, that randomization
+helps once real data is present, rested on one lucky v6 run and was
+withdrawn.
 
 ### The image-level gap
 
@@ -367,8 +371,8 @@ mission is unaffected because identity is decided from ground position.
 
 ## 7. What I would do next
 
-1. Repeat v6 with more seeds (and v4 with more), enough to compare the
-   two recipes' means rather than single runs.
+1. Train on the full simulated set, longer, with several seeds, and see
+   whether more simulated data moves the real score at all.
 2. Test v4 and v6 on a second real dataset from different footage.
 3. Protect the head as well as the backbone: a lower learning rate, or
    freezing the neck, in simulation-only training.
