@@ -960,3 +960,46 @@ tests it directly.
 - v6 also differs from v4 in the number of flights its simulated frames
   come from (30 against 54).
 - The real training and test images share footage, as for v4.
+
+### Repeat runs with other training seeds (overnight, 2026-11-17)
+
+Question: every version was trained once. How much does a score move when
+the SAME recipe is trained again? Three repeat runs, same export, same
+settings, only the training seed changed (51 was the original). Commit
+30c8c68. Results in `docs/results/seed_runs.csv`.
+
+| Run | Sim-test mAP@0.5 | SARD mAP@0.5 (95 % interval over images) |
+| --- | --- | --- |
+| v1, seed 51 | 0.947 | 0.014 (0.009 to 0.019) |
+| v1, seed 52 | 0.946 | 0.011 (0.009 to 0.017) |
+| v4, seed 51 | 0.934 | 0.547 (0.529 to 0.570) |
+| v4, seed 52 | 0.937 | 0.586 (0.567 to 0.606) |
+| v4, seed 53 | 0.934 | 0.532 (0.513 to 0.554) |
+| v6, seed 51 (one run) | 0.926 | 0.597 (0.580 to 0.617) |
+| v0, untrained | 0.453 | 0.591 (0.574 to 0.607) |
+
+**The training seed alone moves v4's real score across 0.054** (0.532 to
+0.586). That is larger than the bootstrap intervals suggested: those
+cover the choice of test images, and say nothing about training.
+
+What survives, and what does not:
+
+- **Survives: simulation-only training collapses on real images.** Both
+  v1 runs are at 0.01. Not a fluke of one run.
+- **Survives: the simulated score is stable.** 0.934 to 0.937 across v4's
+  three runs.
+- **Survives: v4 does not beat the untrained network on real images.**
+  All three runs (0.532, 0.547, 0.586) are below v0's 0.591.
+- **Does NOT survive: "v6 beats v4".** v6's 0.597 is above every v4 run,
+  but only by 0.011 over the best one, and the v4 runs alone spread over
+  0.054. With one v6 run, the difference from v4 cannot be told apart from
+  training noise. The earlier entry for v6 said "likely, not
+  established"; on this evidence it is not established at all.
+- **Does not survive: "v6 is level with v0" as a statement about v6.** It
+  is true of that one run; a second v6 run could land anywhere in a range
+  like v4's.
+
+Practical rule from this: on this setup, a real-image difference smaller
+than about 0.06 between two single training runs means nothing. The
+headline differences (0.01 against 0.55, or 0.13 against 0.55) are far
+outside that.

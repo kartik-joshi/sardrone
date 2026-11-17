@@ -38,12 +38,15 @@ body size, clutter) and camera realism each left the real score near zero.
 Three hundred real images restored real performance without costing
 anything on simulation. Freezing the backbone kept nine times more
 real-world ability than training every layer, and was still far short.
-Randomization, useless alone, added five points once real images were in
-the mix. Full table with 95 % bootstrap intervals:
+Randomization, useless alone, scored five points higher once real images
+were in the mix, but repeat runs show that the training seed alone moves
+the real score by about as much, so that difference is not established. Full table with 95 % bootstrap intervals:
 [docs/results/scorecard.md](docs/results/scorecard.md).
 
-**2. No trained version beats the untrained network on real photos.** The
-best, v6, is level with it (0.597 against 0.591, intervals overlapping).
+**2. No trained version beats the untrained network on real photos.** Three
+runs of v4 with different training seeds score 0.532, 0.547 and 0.586,
+all below the untrained network's 0.591; the best single run, v6, is
+level with it.
 On this evidence the simulated data has not been shown to help real-world
 detection; what it buys is performance in the simulated worlds the drone
 actually flies in (0.926 against 0.453) without losing the real-world
@@ -192,8 +195,10 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   real test images come from the same SARD footage. A second real dataset
   would be the honest test; none has been used.
 - **Small-scale training.** Each model saw a seeded 6,000-frame sample for
-  10 epochs, once, with one seed. Differences of a few points between
-  versions (v6 against v4, for example) are not yet backed by repeat runs. The intervals cover the choice of test
+  10 epochs. Repeat runs of v4 with three seeds spread over 0.054 on real
+  images, so differences between versions smaller than that (v6 against
+  v4, for example) are not meaningful.
+  ([docs/results/seed_runs.md](docs/results/seed_runs.md)) The intervals cover the choice of test
   images, not the randomness of training.
 - **No fog or rain.** This Gazebo setup does not render fog, so `weather`
   only accepts `clear`.

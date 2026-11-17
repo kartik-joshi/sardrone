@@ -182,10 +182,25 @@ simulation, and is still far below v0. With an identical backbone, the
 difference from v0 lies in the neck and head, which learned to call only
 rendered figures a person.
 
-**Finding 6. Randomization helped once real data was present.** v6 scores
-0.597 against v4's 0.547 on real images, with non-overlapping intervals;
-alone (v2 against v1) randomization was worth 0.018. This rests on one
-training run per version.
+**Finding 6. Whether randomization helps once real data is present is not
+established.** v6 scored 0.597 against v4's 0.547, but v4 trained three
+times with different seeds scored 0.532, 0.547 and 0.586 (see "Run-to-run variation" below).
+The v6 advantage over the best v4 run is 0.011.
+
+### Run-to-run variation
+
+Source: `docs/results/seed_runs.csv`. The same recipe trained again with
+only the training seed changed:
+
+| Recipe | Real-image mAP@0.5, by seed | Spread |
+| --- | --- | --- |
+| v1 | 0.014, 0.011 | 0.003 |
+| v4 | 0.547, 0.586, 0.532 | 0.054 |
+
+The bootstrap intervals in the scorecard cover the choice of test images,
+about plus or minus 0.02. Training variation is larger. Findings 1, 3, 4
+and 5 hold across seeds (v1's collapse is reproduced; every v4 run is
+below v0); finding 6 does not.
 
 ### The image-level gap
 
@@ -290,8 +305,9 @@ mission is unaffected because identity is decided from ground position.
   real test images are from the same footage: the same shoots, places and
   people. It measures "more of the same", not a new location. No second
   real dataset was used.
-- **One run per version, one seed.** The intervals cover the choice of
-  test images and not the randomness of training.
+- **Few runs per version.** v1 was trained twice and v4 three times; the
+  others once. v4's three runs spread over 0.054 on real images, so
+  single-run differences smaller than that are not meaningful.
 - **Small training budget.** A quarter of the simulated training frames,
   for ten epochs. A longer run would raise the simulated score; nothing
   here suggests it would raise the real one.
@@ -311,8 +327,8 @@ mission is unaffected because identity is decided from ground position.
 
 ## 7. What I would do next
 
-1. Repeat the key versions with other training seeds, so that
-   differences of a few points can be told from run-to-run variation.
+1. Repeat v6 with more seeds (and v4 with more), enough to compare the
+   two recipes' means rather than single runs.
 2. Test v4 and v6 on a second real dataset from different footage.
 3. Protect the head as well as the backbone: a lower learning rate, or
    freezing the neck, in simulation-only training.
