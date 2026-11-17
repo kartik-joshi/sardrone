@@ -28,19 +28,26 @@ than not training it at all.**
 | v2 | v1's recipe on domain-randomized worlds | 0.935 | 0.032 | 0.902 |
 | v3 | v1 + camera realism (noise, blur, JPEG, exposure) | 0.941 | 0.020 | 0.921 |
 | v4 | v3 + 300 real images (5 %) | 0.934 | 0.547 | 0.387 |
+| v5 | v1 with the backbone frozen | 0.943 | 0.127 | 0.816 |
+| v6 | v4 with domain-randomized simulated frames | 0.926 | 0.597 | 0.329 |
 
 The pretrained network already found half the real people. Ten epochs on
 simulated frames taught it to find 93 % of simulated people and left it
 nearly blind to real ones. Domain randomization (ground, light, clothing,
 body size, clutter) and camera realism each left the real score near zero.
 Three hundred real images restored real performance without costing
-anything on simulation. Full table with 95 % bootstrap intervals:
+anything on simulation. Freezing the backbone kept nine times more
+real-world ability than training every layer, and was still far short.
+Randomization, useless alone, added five points once real images were in
+the mix. Full table with 95 % bootstrap intervals:
 [docs/results/scorecard.md](docs/results/scorecard.md).
 
-**2. v4 does not beat the untrained network on real photos** (0.547 against
-0.591). On this evidence the simulated data has not been shown to help
-real-world detection at all; what it buys is performance in the simulated
-worlds the drone actually flies in, without losing the real-world ability.
+**2. No trained version beats the untrained network on real photos.** The
+best, v6, is level with it (0.597 against 0.591, intervals overlapping).
+On this evidence the simulated data has not been shown to help real-world
+detection; what it buys is performance in the simulated worlds the drone
+actually flies in (0.926 against 0.453) without losing the real-world
+ability.
 
 **3. With the detector in the loop, the drone found 39 of 45 people** across
 15 unseen simulated worlds, with no false reports. All six misses were in
@@ -185,7 +192,8 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   real test images come from the same SARD footage. A second real dataset
   would be the honest test; none has been used.
 - **Small-scale training.** Each model saw a seeded 6,000-frame sample for
-  10 epochs, once, with one seed. The intervals cover the choice of test
+  10 epochs, once, with one seed. Differences of a few points between
+  versions (v6 against v4, for example) are not yet backed by repeat runs. The intervals cover the choice of test
   images, not the randomness of training.
 - **No fog or rain.** This Gazebo setup does not render fog, so `weather`
   only accepts `clear`.

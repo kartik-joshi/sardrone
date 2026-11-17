@@ -12,6 +12,7 @@ intervals. Gap = simulated minus real: the smaller, the better the transfer.
 | v3 | v1 + camera realism on training images (noise, blur, JPEG, exposure) | 0.941 (0.935 to 0.945) | 0.020 (0.017 to 0.023) | 0.921 (0.913 to 0.925) | 0.98 / 0.92 | 0.13 / 0.02 | 5999 | `86479461bb4f3bb7` | `e316ec6` |
 | v4 | v3 + 300 real images (5 %) from sard-train-pool | 0.934 (0.931 to 0.941) | 0.547 (0.529 to 0.570) | 0.387 (0.364 to 0.408) | 0.98 / 0.92 | 0.70 / 0.58 | 6299 | `7918bf71d200e0da` | `d734d95` |
 | v5 | v1 with the backbone frozen (only the detection head trains) | 0.943 (0.938 to 0.946) | 0.127 (0.119 to 0.138) | 0.816 (0.804 to 0.825) | 0.98 / 0.93 | 0.35 / 0.16 | 5999 | `d741bdbb19fbe45d` | `433ae47` |
+| v6 | v4 with domain-randomized simulated frames (randomized + realism + 300 real) | 0.926 (0.921 to 0.931) | 0.597 (0.580 to 0.617) | 0.329 (0.307 to 0.346) | 0.96 / 0.88 | 0.51 / 0.70 | 6300 | `1acc17da393128c2` | `0632f6a` |
 
 Precision and recall are at the confidence cut-off chosen on the validation set
 (column `confidence` in the CSV), IoU 0.5.

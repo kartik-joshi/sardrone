@@ -913,3 +913,50 @@ should keep the real score.
 
 Limits: one run. "Frozen" covers the backbone only; the neck trained
 freely. Lower learning rates or freezing the neck too were not tried.
+
+### v6 = v4 with domain-randomized simulated frames
+
+Question: randomization alone did nothing useful for real images (v2).
+Does it add anything once real examples are in the training set?
+
+- Export `v6-6k`, hash `1acc17da393128c2`: 6,000 frames from the 30
+  randomized flights, degraded like v3's, plus the same 300 real images as
+  v4 (same seed, same draw from `sard-train-pool`). Same settings. 165.4
+  minutes. The run record says `dirty: True` because the v5 dev-log entry
+  was not committed yet when it started; the code is commit 433ae47.
+
+| Version | Simulated frames | Sim-test mAP@0.5 | SARD mAP@0.5 | Gap | SARD precision / recall |
+| --- | --- | --- | --- | --- | --- |
+| v0 pretrained | none | 0.453 | 0.591 (0.574 to 0.607) | -0.138 | 0.83 / 0.51 |
+| v4 | plain + realism + 300 real | 0.934 | 0.547 (0.529 to 0.570) | 0.387 | 0.70 / 0.58 |
+| v6 | randomized + realism + 300 real | 0.926 (0.922 to 0.931) | 0.597 (0.580 to 0.617) | 0.329 (0.307 to 0.346) | 0.51 / 0.70 |
+
+- **With real images present, randomization helped: 0.597 against 0.547,
+  and the intervals do not overlap.** Alone it was worth 0.018 (v2 against
+  v1); on top of real data it is worth 0.050.
+- **v6 is the first trained version level with the untrained network on
+  real photos** (0.597 against 0.591; the intervals overlap, so "level",
+  not "better"), while scoring 0.926 on simulated worlds, where the
+  untrained network scores 0.453.
+- It costs a little in simulation (0.926 against v4's 0.934) and its
+  operating point is different: more recall and less precision on SARD
+  (0.70 / 0.51 against 0.58 / 0.70), at a cut-off of 0.14 chosen on
+  simulated validation frames.
+
+A reading of v2 and v6 together: randomization does not teach the network
+what a real person looks like, so alone it cannot help. It may stop the
+network from leaning on the simulator's fixed look (one grass colour, one
+sun direction, nothing else on the ground), which leaves the 300 real
+examples more room to count. That is an interpretation; nothing here
+tests it directly.
+
+### How far to trust v5 and v6
+
+- One run each, one seed. v4 and v6 differ by 0.050 on real images, and
+  how much two trainings of the SAME recipe differ is not known yet. Repeat
+  runs of v4 and v1 with other seeds are training now
+  (`docs/results/seed_runs.csv`); until they are in, treat "v6 beats v4"
+  as likely, not established.
+- v6 also differs from v4 in the number of flights its simulated frames
+  come from (30 against 54).
+- The real training and test images share footage, as for v4.

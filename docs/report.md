@@ -99,9 +99,12 @@ version. Each version changes one thing:
 | v2 | 6,000 frames from 30 separate flights over domain-randomized worlds: ground palette, sun direction and strength, clothing, body size, 15 to 45 unlabelled distractors | `61b514bcb1580625` |
 | v3 | v1's frames, each degraded like a real camera: exposure, blur, sensor noise, JPEG compression | `86479461bb4f3bb7` |
 | v4 | v3's frames plus 300 real images from `sard-train-pool` (5 %) | `7918bf71d200e0da` |
+| v5 | v1's frames, with the backbone (modules 0 to 10) frozen at its COCO weights | `d741bdbb19fbe45d` |
+| v6 | v4 with the simulated frames taken from the randomized flights instead | `1acc17da393128c2` |
 
 v0 was not in the original plan. It was added as a reference and turned
-out to matter most.
+out to matter most. v5 and v6 were added after v1 to v4 to answer two
+questions those results raised.
 
 ### Metrics
 
@@ -137,8 +140,11 @@ Source: `docs/results/scorecard.csv`.
 | v2 domain randomization | 0.935 (0.931 to 0.941) | 0.032 (0.029 to 0.038) | 0.902 (0.896 to 0.910) | 0.27 / 0.04 |
 | v3 + camera realism | 0.941 (0.935 to 0.945) | 0.020 (0.017 to 0.023) | 0.921 (0.913 to 0.925) | 0.13 / 0.02 |
 | v4 + 5 % real | 0.934 (0.931 to 0.941) | 0.547 (0.529 to 0.570) | 0.387 (0.364 to 0.408) | 0.70 / 0.58 |
+| v5 v1, backbone frozen | 0.943 (0.938 to 0.946) | 0.127 (0.119 to 0.138) | 0.816 (0.804 to 0.825) | 0.35 / 0.16 |
+| v6 v4 on randomized worlds | 0.926 (0.922 to 0.931) | 0.597 (0.580 to 0.617) | 0.329 (0.307 to 0.346) | 0.51 / 0.70 |
 
-mAP@0.5:0.95 on SARD: v0 0.301, v1 0.007, v2 0.013, v3 0.005, v4 0.235.
+mAP@0.5:0.95 on SARD: v0 0.301, v1 0.007, v2 0.013, v3 0.005, v4 0.235,
+v5 0.041, v6 0.255.
 
 **Finding 1. Simulation-only fine-tuning destroyed real-world
 performance.** The pretrained network scored 0.591 on real photographs.
@@ -163,10 +169,23 @@ cost in simulation.** Three hundred real images took the real score from
 0.020 to 0.547 while the simulated score moved from 0.941 to 0.934.
 
 **Finding 4. No trained version beats the untrained network on real
-images.** v4's 0.547 is below v0's 0.591, and the intervals do not
-overlap. On this evidence the simulated data contributes nothing to
-real-image detection. What v4 offers over v0 is that it also works in the
-simulated worlds (0.934 against 0.453).
+images.** v4's 0.547 is below v0's 0.591. v6 reaches 0.597, level with v0
+(the intervals overlap). On this evidence the simulated data has not been
+shown to improve real-image detection. What v4 and v6 offer over v0 is
+that they also work in the simulated worlds (0.934 and 0.926 against
+0.453).
+
+**Finding 5. Freezing the backbone prevents most of the damage to the
+features and little of the damage to the result.** v5 keeps nine times
+more real-image performance than v1 (0.127 against 0.014) at no cost in
+simulation, and is still far below v0. With an identical backbone, the
+difference from v0 lies in the neck and head, which learned to call only
+rendered figures a person.
+
+**Finding 6. Randomization helped once real data was present.** v6 scores
+0.597 against v4's 0.547 on real images, with non-overlapping intervals;
+alone (v2 against v1) randomization was worth 0.018. This rests on one
+training run per version.
 
 ### The image-level gap
 
@@ -292,12 +311,11 @@ mission is unaffected because identity is decided from ground position.
 
 ## 7. What I would do next
 
-1. Protect the pretrained features: freeze the backbone, or lower the
-   learning rate, and see whether simulation-only training then keeps
-   v0's real score.
-2. Test v4 on a second real dataset from different footage.
-3. Combine randomization with the real images (v2 + v4) to see whether
-   it adds anything once real examples are present.
+1. Repeat the key versions with other training seeds, so that
+   differences of a few points can be told from run-to-run variation.
+2. Test v4 and v6 on a second real dataset from different footage.
+3. Protect the head as well as the backbone: a lower learning rate, or
+   freezing the neck, in simulation-only training.
 4. Widen the simulated content (more bodies, vegetation, terrain) before
    spending more on rendering fidelity, since content is where the domains
    differ.
