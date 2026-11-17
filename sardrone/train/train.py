@@ -127,11 +127,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch", type=int)
     parser.add_argument("--device")
     parser.add_argument("--workers", type=int)
+    parser.add_argument("--seed", type=int, help="training seed (default 51); other seeds measure run-to-run variation")
     parser.add_argument("--freeze", type=int, help="freeze the first N modules (11 = the whole backbone)")
     args = parser.parse_args(argv)
 
     config = TrainConfig()
-    for key in ("epochs", "imgsz", "batch", "device", "workers", "freeze"):
+    for key in ("epochs", "imgsz", "batch", "device", "workers", "freeze", "seed"):
         if getattr(args, key) is not None:
             setattr(config, key, getattr(args, key))
     record = train(DEFAULT_EXPORT_ROOT / args.export, args.version, config, commit=git_commit())

@@ -75,13 +75,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--change", required=True, help="what is different in this version, in a few words")
     parser.add_argument("--device", default="mps")
     parser.add_argument("--limit", type=int, help="quick try on N images per set; the scorecard is NOT written")
+    parser.add_argument("--scorecard", type=Path, default=scorecard.DEFAULT_CSV,
+                        help="CSV to update (default: the main scorecard)")  # fmt: skip
     args = parser.parse_args(argv)
     row = evaluate_version(
-        args.version, args.change, device=args.device, limit=args.limit,
+        args.version, args.change, device=args.device, limit=args.limit, csv_path=args.scorecard,
         commit=git_commit(), log=lambda message: print(message, flush=True),
     )  # fmt: skip
     print(json.dumps(row, indent=2))
-    print("scorecard NOT written (--limit)" if args.limit else f"scorecard: {scorecard.DEFAULT_CSV}")
+    print("scorecard NOT written (--limit)" if args.limit else f"scorecard: {args.scorecard}")
     return 0
 
 
