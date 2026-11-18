@@ -213,7 +213,9 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   the real test images come from the same SARD footage. On HERIDAL, other
   footage never trained on, every model scores far lower (v4 0.231, v6
   0.262, untrained v0 0.184, simulation-only v1 0.030; 101 images, so the
-  intervals overlap) but the order is the same.
+  intervals overlap). Simulation-only training collapses there too, and the
+  mixed models again find more of the people than v0 (max recall 0.55 to
+  0.60 against 0.38).
   ([docs/results/extra_real.csv](docs/results/extra_real.csv))
 - **Small-scale training.** Each model saw a seeded 6,000-frame sample for
   10 epochs. v4 and v6 were each trained three times; their real-image

@@ -202,7 +202,7 @@ and licence in DETAILS.md). Scores from `docs/results/extra_real.csv`:
 
 Simulation-only training collapses again (0.030). The models that saw 300
 SARD images score above the untrained v0, though with only 101 images the
-mAP intervals overlap; their max recall (0.57 to 0.60 against 0.38) is the
+mAP intervals overlap; their max recall (0.55 to 0.60 against 0.38) is the
 clearer gap. All scores are much lower than on SARD: the median person is
 56 x 53 px in a 4000 px photo, about 18 x 17 px at the model's 1280 input.
 
