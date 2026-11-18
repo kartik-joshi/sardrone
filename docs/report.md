@@ -188,6 +188,24 @@ each, v4 averages 0.555 (0.532 to 0.586) and v6 0.570 (0.526 to 0.597):
 the difference is well inside either recipe's own spread. See
 "Run-to-run variation" below.
 
+**Finding 7. On a second real dataset the pattern holds.** HERIDAL is
+different footage, never trained on (101 test images, 337 people; source
+and licence in DETAILS.md). Scores from `docs/results/extra_real.csv`:
+
+| Model | HERIDAL mAP@0.5 (95 % interval) | Max recall |
+| --- | --- | --- |
+| v0, untrained | 0.184 (0.118 to 0.258) | 0.38 |
+| v1, simulation only | 0.030 (0.013 to 0.067) | 0.16 |
+| v4, + 300 SARD images | 0.231 (0.154 to 0.324) | 0.57 |
+| v6, v4 + randomized worlds | 0.262 (0.179 to 0.358) | 0.60 |
+| v7, v6 + box-built cars | 0.213 (0.142 to 0.302) | 0.55 |
+
+Simulation-only training collapses again (0.030). The models that saw 300
+SARD images score above the untrained v0, though with only 101 images the
+mAP intervals overlap; their max recall (0.57 to 0.60 against 0.38) is the
+clearer gap. All scores are much lower than on SARD: the median person is
+56 x 53 px in a 4000 px photo, about 18 x 17 px at the model's 1280 input.
+
 ### Precision-recall curves
 
 Source: `docs/images/pr_curves.png`, from the stored predictions. On real
@@ -377,7 +395,8 @@ mission is unaffected because identity is decided from ground position.
 
 1. Train on the full simulated set, longer, with several seeds, and see
    whether more simulated data moves the real score at all.
-2. Test v4 and v6 on a second real dataset from different footage.
+2. Run the detector on full-resolution tiles: on HERIDAL the people
+   shrink to about 18 px at the model's input size.
 3. Protect the head as well as the backbone: a lower learning rate, or
    freezing the neck, in simulation-only training.
 4. Widen the simulated content (more bodies, vegetation, terrain) before

@@ -209,9 +209,12 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   ground. Randomizing colours, light and clutter did not change that. The real test images (tall dry grass, quarry stone, roads) look
   nothing like it, and a linear classifier on image embeddings separates
   the two domains 100 % of the time.
-- **v4's real score is flattered.** Its 300 real training images and the
-  real test images come from the same SARD footage. A second real dataset
-  would be the honest test; none has been used.
+- **v4's real SARD score is flattered.** Its 300 real training images and
+  the real test images come from the same SARD footage. On HERIDAL, other
+  footage never trained on, every model scores far lower (v4 0.231, v6
+  0.262, untrained v0 0.184, simulation-only v1 0.030; 101 images, so the
+  intervals overlap) but the order is the same.
+  ([docs/results/extra_real.csv](docs/results/extra_real.csv))
 - **Small-scale training.** Each model saw a seeded 6,000-frame sample for
   10 epochs. v4 and v6 were each trained three times; their real-image
   scores spread over 0.053 and 0.072, so differences between versions

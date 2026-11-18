@@ -1325,3 +1325,33 @@ count above is by eye from `docs/images/v7_false_alarms_real.jpg`.)
 So the false-alarm review named the right problem, and the first fix for
 it was too crude. Real vehicle images, or proper vehicle meshes, would be
 the next step; neither was tried.
+
+## HERIDAL: a second real test set nobody trained on (2026-11-17)
+
+SARD's 300 training images and its test images come from the same footage,
+so v4's real score is flattered. HERIDAL (Aalto's CC BY 3.0 copy, see
+DETAILS.md) is different footage: 101 test images, 4000 x 3000, 337
+people. Nothing from it was trained on. Same models as the scorecard
+(seed 51 runs), same inference size (1280), each scored at its own
+scorecard cut-off. `docs/results/extra_real.csv`.
+
+| Model | HERIDAL mAP@0.5 (95 % interval) | Max recall |
+| --- | --- | --- |
+| v0, untrained | 0.184 (0.118 to 0.258) | 0.38 |
+| v1, simulation only | 0.030 (0.013 to 0.067) | 0.16 |
+| v4, + 300 SARD images | 0.231 (0.154 to 0.324) | 0.57 |
+| v6, v4 + randomized worlds | 0.262 (0.179 to 0.358) | 0.60 |
+| v7, v6 + box-built cars | 0.213 (0.142 to 0.302) | 0.55 |
+
+- **Simulation-only training collapses here too** (v1: 0.030). That
+  result now holds on two real datasets.
+- **Mixing in 300 SARD images helps beyond SARD.** v4, v6 and v7 all score
+  above the untrained v0, but the intervals overlap (101 images is few), so
+  by mAP alone that is not established. Max recall is clearer: v0 cannot
+  find more than 38 % of the people at any cut-off; v4 and v6 reach 57 %
+  and 60 %. Same pattern as on SARD.
+- **Everything scores far lower than on SARD.** People are small here:
+  median box 56 x 53 px in a 4000 px image, about 18 x 17 px once the image
+  is shrunk to 1280 for the model. Inference on tiles at full resolution
+  would probably help every model; not tried.
+- v7 again sits below v4 and v6, inside their intervals.
