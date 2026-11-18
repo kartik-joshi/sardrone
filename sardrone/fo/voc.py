@@ -29,7 +29,11 @@ IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
 def find_layout(root: Path) -> dict:
     """Locate Annotations/, the image folder and an optional test list under `root`."""
     root = Path(root)
-    annotations = next((p for p in root.rglob("Annotations") if p.is_dir()), None)
+    # Archives made on a Mac carry a __MACOSX folder that mirrors the real
+    # one with metadata files ("._name.xml"); it must never be picked.
+    annotations = next(
+        (p for p in sorted(root.rglob("Annotations")) if p.is_dir() and "__MACOSX" not in p.parts), None
+    )
     if annotations is None:
         raise FileNotFoundError(f"no Annotations folder under {root}")
     base = annotations.parent

@@ -251,6 +251,11 @@ def test_voc_loader_maps_every_class_to_person_and_uses_the_test_list(tmp_path, 
             f"<annotation><size><width>100</width><height>100</height><depth>3</depth></size>{objects}</annotation>"
         )
     (base / "ImageSets" / "Main" / "test.txt").write_text("a\nb\n")  # c is not in the test split
+    # A __MACOSX mirror (sorted before "VOC") must be ignored.
+    junk = tmp_path / "__MACOSX" / "VOC"
+    (junk / "Annotations").mkdir(parents=True)
+    (junk / "JPEGImages").mkdir()
+    (junk / "Annotations" / "._a.xml").write_bytes(b"\x00\x05\x16\x07 not xml")
     dataset = voc.build(dataset_name, tmp_path, log=lambda m: None)
     assert len(dataset) == 2 and dataset.count("ground_truth.detections") == 3
     assert set(dataset.distinct("ground_truth.detections.label")) == {"person"}
