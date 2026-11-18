@@ -66,6 +66,25 @@ def frame_number(filename: str) -> int:
     return int(match.group(1))
 
 
+def read_voc_boxes(xml_path: Path) -> tuple[int, int, list[RealBox]]:
+    """Any Pascal VOC file: width, height and its boxes, the class name kept
+    as-is in `pose` (for datasets whose classes are not SARD's postures)."""
+    root = ET.parse(xml_path).getroot()
+    size = root.find("size")
+    width, height = int(float(size.find("width").text)), int(float(size.find("height").text))
+    boxes = []
+    for item in root.findall("object"):
+        box = item.find("bndbox")
+        x0, y0 = float(box.find("xmin").text) - 1.0, float(box.find("ymin").text) - 1.0
+        x1, y1 = float(box.find("xmax").text), float(box.find("ymax").text)
+        x0, y0, x1, y1 = max(0.0, x0), max(0.0, y0), min(float(width), x1), min(float(height), y1)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        difficult = (item.findtext("difficult") or "0").strip() == "1"
+        boxes.append(RealBox(item.findtext("name", "").strip(), x0, y0, x1, y1, difficult))
+    return width, height, boxes
+
+
 def read_annotation(xml_path: Path) -> tuple[int, int, list[RealBox]]:
     """One Pascal VOC file: image width, height and its boxes.
 

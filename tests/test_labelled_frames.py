@@ -232,3 +232,30 @@ def test_episodes_already_in_the_dataset_keep_what_was_computed_on_them(tmp_path
     old = dataset.match(fo.ViewField("episode_id") == "ep-one")
     assert old.values("clip_embedding") == [[1.0, 0.0]] * 7, "existing samples were not replaced"
     assert dataset.count_values("episode_id") == {"ep-one": 7, "ep-two": 3}
+
+
+def test_voc_loader_maps_every_class_to_person_and_uses_the_test_list(tmp_path, dataset_name):
+    from sardrone.fo import voc
+
+    base = tmp_path / "VOC"
+    (base / "Annotations").mkdir(parents=True)
+    (base / "JPEGImages").mkdir()
+    (base / "ImageSets" / "Main").mkdir(parents=True)
+    for stem, boxes in (("a", [("human", 11, 21, 30, 60)]), ("b", [("person", 1, 1, 10, 10), ("human", 50, 50, 70, 90)]), ("c", [])):
+        Image.new("RGB", (100, 100)).save(base / "JPEGImages" / f"{stem}.jpg")
+        objects = "".join(
+            f"<object><name>{n}</name><difficult>0</difficult><bndbox><xmin>{x0}</xmin><ymin>{y0}</ymin>"
+            f"<xmax>{x1}</xmax><ymax>{y1}</ymax></bndbox></object>" for n, x0, y0, x1, y1 in boxes
+        )
+        (base / "Annotations" / f"{stem}.xml").write_text(
+            f"<annotation><size><width>100</width><height>100</height><depth>3</depth></size>{objects}</annotation>"
+        )
+    (base / "ImageSets" / "Main" / "test.txt").write_text("a\nb\n")  # c is not in the test split
+    dataset = voc.build(dataset_name, tmp_path, log=lambda m: None)
+    assert len(dataset) == 2 and dataset.count("ground_truth.detections") == 3
+    assert set(dataset.distinct("ground_truth.detections.label")) == {"person"}
+    assert dataset.info["source"]["classes"] == {"human": 2, "person": 1}
+    first = dataset.match(fo.ViewField("filepath").ends_with("a.jpg")).first().ground_truth.detections[0]
+    # VOC pixels 11..30 -> edges 10..30, so x = 0.10, width = 0.20.
+    assert first.bounding_box == pytest.approx([0.10, 0.20, 0.20, 0.40])
+    assert len(dataset.load_saved_view(f"{dataset_name}-test")) == 2
