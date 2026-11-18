@@ -1277,3 +1277,51 @@ test-007 the normal second pass found 5 of 5 once and 4 of 5 on a re-fly,
 so a single person's difference between settings is within run-to-run
 variation. The direction (strict fewer false alarms, fewer finds) is
 consistent across worlds; the size is not established.
+
+## v7: randomized worlds with parked vehicles (2026-11-17)
+
+- `configs/v7.yaml`: 30 randomized episodes, 1 to 3 box-built cars each,
+  recorded at commit c82115b in 2.5 h; 30 of 30 completed (one needed its
+  retry), 90 of 90 people reported by the oracle.
+- Export `v7-6k`, hash `e411d1520339f4fb`: 6,000 frames from those flights,
+  camera realism, plus the same 300 real images as v4 and v6. Same
+  settings. 164.6 minutes. Recorded as `dirty: True` (documentation and
+  tests uncommitted at the start; training code as in c82115b).
+
+| Recipe | Real (SARD) mAP@0.5 | Sim-test mAP@0.5 |
+| --- | --- | --- |
+| v4, three runs | 0.532 / 0.547 / 0.586 | 0.934 / 0.937 / 0.934 |
+| v6, three runs | 0.597 / 0.526 / 0.587 | 0.926 / 0.925 / 0.930 |
+| v7, one run | 0.498 (0.480 to 0.519) | 0.933 (0.928 to 0.938) |
+
+**v7 is below all six earlier v4 and v6 runs on real images.** One run,
+so the size is not established; but vehicles in the simulated worlds did
+not help, and may have hurt.
+
+What it did to the mistakes it was built to fix (24 most confident false
+alarms on the real test images, counted by eye from the contact sheets):
+
+| | Vehicles among the top 24 | Confidence range of the top 24 |
+| --- | --- | --- |
+| v4 | 24 (one red car) | 0.89 to 0.91 |
+| v6 | 24 (silver and navy cars) | 0.82 to 0.91 |
+| v7 | 20 (silver cars, white off-road vehicles) | 0.77 to 0.82 |
+
+- **Cars are still its most confident mistakes.** Seeing box-built cars
+  as background lowered how sure it is about real cars, by about 0.1, but
+  did not stop it calling them people. A box with a dark cabin is not
+  enough of a car to teach that.
+- **Two of the 24 are real people it localised badly.** A person lying with
+  legs outstretched: v7's box covers the upper body (102 px wide), the true
+  box the whole body (182 px); IoU 0.44, just under the 0.5 needed. So
+  that is a box-size error on lying people, not a hallucination, and the
+  person also counts as missed.
+- The other two are a birch log and a signpost.
+
+(A first, automatic count of "car frames" gave 6 of 24 for v7. It used
+a hand-made list of frame numbers that turned out to be incomplete; the
+count above is by eye from `docs/images/v7_false_alarms_real.jpg`.)
+
+So the false-alarm review named the right problem, and the first fix for
+it was too crude. Real vehicle images, or proper vehicle meshes, would be
+the next step; neither was tried.

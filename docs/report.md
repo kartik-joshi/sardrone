@@ -207,8 +207,12 @@ For v6, trained on worlds with 21 clothing colours and coloured
 distractor boxes, the red car disappears from the top, and silver and
 navy cars take its place. The simulated worlds contain no vehicles, so
 nothing taught the detector that a compact coloured object on grass can
-be something other than a person. Vehicles as unlabelled distractors are
-the obvious next addition to the generator.
+be something other than a person. v7 tested exactly that: randomized
+worlds with one to three box-built cars as background. Its top mistakes
+were still vehicles (20 of 24), at lower confidence (0.77 to 0.82, against
+0.89 to 0.91 for v4), and its real-image score, 0.498 from one run, was
+below all six v4 and v6 runs. A box with a dark cabin is not enough of a
+car to teach the difference.
 
 ### Run-to-run variation
 
