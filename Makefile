@@ -23,7 +23,7 @@ SIDE      ?= 30
 # Who looks for people: `oracle` reads ground truth; a model version (v4) looks at the images.
 DETECTOR  ?= oracle
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap pipeline agent-eval
+.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap pipeline agent-eval agent-record curves false-alarms real-voc extra-real
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -184,6 +184,27 @@ RUN ?=
 pipeline: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
 	$(PY) -m sardrone.pipeline --version $(VERSION) --max-train 6000 $(if $(RUN),--run,)
 
+# ---- analysis after evaluation -------------------------------------------------
+
+# Precision-recall curves for every evaluated version -> docs/images/pr_curves.png
+curves: $(VENV)/.dev $(VENV)/.view
+	$(PY) -m sardrone.train.curves
+
+# Mark a model's false alarms; contact sheet of its most confident ones on real photos.
+false-alarms: $(VENV)/.dev $(VENV)/.view
+	$(PY) -m sardrone.fo.false_alarms --version $(VERSION)
+
+# A second real test set from a Pascal VOC folder (HERIDAL: see docs/DETAILS.md).
+REAL_NAME ?= heridal
+REAL_ROOT ?= data/real/heridal
+real-voc: $(VENV)/.dev $(VENV)/.view
+	$(PY) -m sardrone.fo.voc --name $(REAL_NAME) --root $(REAL_ROOT)
+
+# Score model versions on that set, at their scorecard cut-offs.
+VERSIONS ?= v0 v4
+extra-real: $(VENV)/.dev $(VENV)/.view $(VENV)/.yolo
+	$(PY) -m sardrone.train.extra_real --dataset $(REAL_NAME) --versions $(VERSIONS)
+
 # ---- mission agent (Phase 4A) -------------------------------------------------
 
 # 20 written missions against the mission simulator. MODEL=rule-based is free;
@@ -191,6 +212,11 @@ pipeline: $(VENV)/.dev $(VENV)/.view $(VENV)/.ml
 MODEL ?= rule-based
 agent-eval: $(VENV)/.dev
 	$(PY) -m sardrone.agent.evaluate --model rule-based $(if $(filter cohere,$(MODEL)),--model cohere,)
+
+# One mission's agent decisions as an episode with /events (MISSION=m02).
+MISSION ?= m02
+agent-record: $(VENV)/.dev
+	$(PY) -m sardrone.agent.record --mission $(MISSION) --model $(MODEL)
 
 view: $(VENV)/.dev $(VENV)/.view
 	VFF_MULTIMODAL=1 $(PY) -m sardrone.fo.load

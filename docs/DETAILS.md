@@ -241,6 +241,50 @@ All six misses were in forest-edge worlds, five of them people under
 trees; in the open it found 33 of 34. Nothing was reported that was not
 there: nine times the detector held a false track and the orbit rejected it.
 
+## Evaluating further (after Phase 3B)
+
+Each of these reads predictions already stored by `make evaluate`; only
+`make extra-real` runs the models again, on a new test set.
+
+```bash
+make curves                       # precision-recall curves for every version
+```
+
+```bash
+make false-alarms VERSION=v4      # fills the sar-false-alarms view; contact sheet of real-photo mistakes
+```
+
+### A second real test set: HERIDAL
+
+SARD's training pool and test set come from the same footage, which
+flatters any model trained on the pool. HERIDAL is a separate set of drone
+photos of people in wilderness. The copy used is Aalto University's
+modified version on Zenodo (Pasi Pyrrö, CC BY 3.0,
+record 5662351, one 8.3 GB file, MD5 `c2b625ae986898a870b9d8a907aefe45`).
+The original HERIDAL release was academic-only on request; this copy was
+licensed CC BY 3.0 by its uploader. Its own test split (101 images,
+4000 x 3000) is used, and nothing from it is trained on.
+
+Zenodo serves this file at about 180 KB/s per connection, so it was
+fetched in 16 parallel byte ranges and the joined file checked against
+the MD5 above. Unpack it into `data/real/heridal/`, then:
+
+```bash
+make real-voc REAL_NAME=heridal REAL_ROOT=data/real/heridal
+```
+
+```bash
+make extra-real REAL_NAME=heridal VERSIONS="v0 v1 v4 v6 v7"
+```
+
+Results: `docs/results/extra_real.csv`.
+
+### The agent's decisions as an episode
+
+```bash
+make agent-record MISSION=m02     # one mission, decisions on /events, viewable like a flight
+```
+
 ## Topics in an episode
 
 | Topic | Schema | Encoding | Notes |
