@@ -7,6 +7,7 @@ name = "sardrone"
 version = "0.1.0"
 description = "Search-and-rescue drone in simulation: MCAP episodes viewed in FiftyOne"
 requires-python = ">=3.11"
+license = "MIT"
 # Everything needed to WRITE an episode (no simulator, no viewer).
 dependencies = [
     "foxglove-sdk>=0.31",  # writes MCAP with Foxglove protobuf schemas

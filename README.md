@@ -102,16 +102,17 @@ recall, and found 93 % of people in the open but 37 % of those under trees.
             detector + tracker back in the mission loop ─> mission metrics
 ```
 
-The same loop at three sizes:
+The same loop at three sizes. "Tonight's loop" is what one evening buys:
+the whole loop, each stage done once and by hand.
 
-| Stage | Smallest version that works | This project | Production |
+| Stage | Tonight's loop (one evening) | This project | Production |
 | --- | --- | --- | --- |
-| See | A folder of images | 86 simulated flights as MCAP episodes, with a manifest (seed, config, commit) per flight | A fleet's logs in object storage, indexed |
-| Curate | Look through the images | Embeddings, near-duplicate tagging, hard-case views, splits by episode | Mining across millions of scenes, scenario taxonomies |
-| Label | Draw boxes by hand | Exact labels from the simulator; an auto-labeller measured against them | Auto-labelling with human review queues and QA |
-| Train | One notebook run | One command per version, with a data hash and a run record | Scheduled, distributed training with experiment tracking |
-| Evaluate | One accuracy number | A scorecard: simulated and real test sets, bootstrap intervals, the gap | Many frozen test sets, regression gates, closed-loop simulation at scale |
-| Close the loop | (none) | The detector flies 15 unseen worlds; mission metrics | Shadow mode, on-road validation |
+| See | One recorded flight, or a folder of drone images | 135 simulated flights as MCAP episodes, each with a manifest line (seed, config, commit) | A fleet's logs in object storage, indexed and searchable |
+| Curate | Scroll through the images in FiftyOne | Embeddings, near-duplicate tagging, hard-case views, splits by whole flight | Mining across millions of scenes; scenario taxonomies |
+| Label | A pretrained or open-vocabulary detector's boxes, taken as they come | Exact labels from the simulator; an auto-labeller measured against them | Auto-labelling with human review queues and label QA |
+| Train | One fine-tuning run in a notebook | One command per version, with a data hash, a run record and repeat seeds | Scheduled distributed training with experiment tracking |
+| Evaluate | One mAP number on whatever was held out | A scorecard: simulated and real test sets, bootstrap intervals, run-to-run spread, the gap | Many frozen test sets, regression gates, slice metrics |
+| Close the loop | Look at a few predictions | The detector flies 15 unseen worlds; mission metrics; false-alarm review feeds the next world design | Shadow mode and on-road validation feeding the next data collection |
 
 ## Run it
 
@@ -229,8 +230,14 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 
 ## Licences and credits
 
-- **This repository's code:** no licence file yet; all rights reserved by
-  default until one is added.
+- **This repository's code:** MIT ([LICENSE](LICENSE)). Use, copy and change
+  it freely.
+- **What MIT does not cover.** The training and detection modules
+  (`sardrone/train/`, `sardrone/mission/detector.py`) import Ultralytics,
+  which is AGPL-3.0. Distributing a product that combines them with
+  Ultralytics is subject to AGPL-3.0 (or an Ultralytics licence). The data
+  and models listed below keep their own licences, and none of them is
+  included in this repository.
 - **Ultralytics YOLO11:** AGPL-3.0. Fine for a portfolio project; it would
   matter for a closed-source product.
 - **SARD** (the real test set): Sasa Sambolek and Marina Ivasic-Kos,
