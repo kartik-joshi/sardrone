@@ -398,11 +398,12 @@ mission is unaffected because identity is decided from ground position.
   wrong domain for tuning a real-image operating point. It affects the
   precision and recall columns, not mAP.
 - **v2 is not a clean ablation of v1.** Its 6,000 frames come from 30
-  flights, v1's from 54. Randomization was also never combined with real
-  data.
+  flights, v1's from 54. (v6 later combined randomization with real data;
+  see Finding 6.)
 - **Planned and not done at the time of writing:** a mission agent driven
   by a language model (the evaluation harness exists; no model call was
-  made), and weather.
+  made), and weather (this Gazebo setup does not render fog; see the
+  README limitations).
 - **Small counts in the closed-loop breakdowns:** 9 to 34 people per cell.
 
 ## 7. What I would do next
