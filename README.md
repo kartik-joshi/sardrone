@@ -30,6 +30,8 @@ than not training it at all.**
 | v4 | v3 + 300 real images (5 %) | 0.934 | 0.547 | 0.387 |
 | v5 | v1 with the backbone frozen | 0.943 | 0.127 | 0.816 |
 | v6 | v4 with domain-randomized simulated frames | 0.926 | 0.597 | 0.329 |
+| v7 | v6 with box-built cars in the worlds | 0.933 | 0.498 | 0.435 |
+| v8 | v4 on all 24,667 simulated frames (4x) | 0.946 | 0.483 | 0.462 |
 
 The pretrained network already found half the real people. Ten epochs on
 simulated frames taught it to find 93 % of simulated people and left it
@@ -218,7 +220,8 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   0.60 against 0.38).
   ([docs/results/extra_real.csv](docs/results/extra_real.csv))
 - **Small-scale training.** Each model saw a seeded 6,000-frame sample for
-  10 epochs. v4 and v6 were each trained three times; their real-image
+  10 epochs (v8 saw all 24,667 frames and scored lower on real photos,
+  but its real share was a quarter of v4's, so the two causes are mixed). v4 and v6 were each trained three times; their real-image
   scores spread over 0.053 and 0.072, so differences between versions
   smaller than that are not meaningful.
   ([docs/results/seed_runs.md](docs/results/seed_runs.md)) The intervals cover the choice of test

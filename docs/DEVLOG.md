@@ -1281,8 +1281,10 @@ consistent across worlds; the size is not established.
 ## v7: randomized worlds with parked vehicles (2026-11-17)
 
 - `configs/v7.yaml`: 30 randomized episodes, 1 to 3 box-built cars each,
-  recorded at commit c82115b in 2.5 h; 30 of 30 completed (one needed its
-  retry), 90 of 90 people reported by the oracle.
+  recorded at commit 5282f31; 30 of 30 completed (veh-020 failed once,
+  PX4 not ready within 60 s, and passed on its retry); the oracle reported
+  88 of the 90 people placed. (Corrected 2026-11-18: this entry first said
+  commit c82115b, which is v7's training commit, and 90 of 90.)
 - Export `v7-6k`, hash `e411d1520339f4fb`: 6,000 frames from those flights,
   camera realism, plus the same 300 real images as v4 and v6. Same
   settings. 164.6 minutes. Recorded as `dirty: True` (documentation and
@@ -1355,3 +1357,35 @@ scorecard cut-off. `docs/results/extra_real.csv`.
   is shrunk to 1280 for the model. Inference on tiles at full resolution
   would probably help every model; not tried.
 - v7 again sits below v4 and v6, inside their intervals.
+
+## v8: v4's recipe on all the simulated frames (2026-11-18)
+
+Question from the report's "next" list: does more simulated data move the
+real score at all? v8 is v4 exactly (camera realism, the same 300 real
+SARD images, 10 epochs, 1280, seed 51) but on all 24,667 simulated
+training frames instead of a 6,000-frame sample. Export `v8-full`, hash
+`c09b4aca41099b26`, 24,967 images. Commit 0266f57, clean tree. 576.6
+minutes of training on the laptop's GPU (MPS).
+
+| | Sim-test mAP@0.5 | Real SARD mAP@0.5 | SARD max recall | HERIDAL mAP@0.5 |
+| --- | --- | --- | --- | --- |
+| v4 (6,000 sim + 300 real) | 0.934 (0.931 to 0.941) | 0.547; three runs 0.532 to 0.586 | 0.80 | 0.231 (0.154 to 0.324) |
+| v8 (24,667 sim + 300 real) | 0.946 (0.942 to 0.948) | 0.483 (0.465 to 0.507) | 0.75 | 0.261 (0.174 to 0.355) |
+
+- **Four times the simulated data made it better at simulation and worse
+  at real SARD photos.** 0.483 is below all three v4 runs. One run; but
+  v4's lowest was 0.532, and v8's upper bound is 0.507.
+- **It is more cautious on real photos:** precision 0.73 and recall 0.40
+  at its cut-off (v4: 0.70 and 0.58), and it never finds more than 75 % of
+  the SARD people at any cut-off (v4: 80 %).
+- **This is confounded, and I cannot separate the two causes.** The 300
+  real images were 4.8 % of v4's training set and are 1.2 % of v8's. So
+  "more simulation hurts" and "a smaller real share hurts" predict the
+  same thing. Keeping the share at 5 % would need about 1,250 real images,
+  and the SARD training pool has only 594. Using all 594 (2.4 %), or
+  repeating the 300 to restore 5 %, would test it; neither was run.
+- On HERIDAL v8 scores 0.261, level with v6 and above v4, with intervals
+  far too wide (101 images) to call that a difference.
+
+So, more simulated frames of the same narrow worlds did not help the real
+score. It is the same lesson as v2 and v3, from a different direction.

@@ -101,6 +101,8 @@ version. Each version changes one thing:
 | v4 | v3's frames plus 300 real images from `sard-train-pool` (5 %) | `7918bf71d200e0da` |
 | v5 | v1's frames, with the backbone (modules 0 to 10) frozen at its COCO weights | `d741bdbb19fbe45d` |
 | v6 | v4 with the simulated frames taken from the randomized flights instead | `1acc17da393128c2` |
+| v7 | v6 recipe on randomized worlds with 1 to 3 box-built parked cars | `e411d1520339f4fb` |
+| v8 | v4 on all 24,667 simulated training frames instead of a 6,000 sample | `c09b4aca41099b26` |
 
 v0 was not in the original plan. It was added as a reference and turned
 out to matter most. v5 and v6 were added after v1 to v4 to answer two
@@ -142,6 +144,8 @@ Source: `docs/results/scorecard.csv`.
 | v4 + 5 % real | 0.934 (0.931 to 0.941) | 0.547 (0.529 to 0.570) | 0.387 (0.364 to 0.408) | 0.70 / 0.58 |
 | v5 v1, backbone frozen | 0.943 (0.938 to 0.946) | 0.127 (0.119 to 0.138) | 0.816 (0.804 to 0.825) | 0.35 / 0.16 |
 | v6 v4 on randomized worlds | 0.926 (0.922 to 0.931) | 0.597 (0.580 to 0.617) | 0.329 (0.307 to 0.346) | 0.51 / 0.70 |
+| v7 v6 + box-built cars | 0.933 (0.928 to 0.938) | 0.498 (0.479 to 0.519) | 0.435 (0.414 to 0.454) | 0.59 / 0.61 |
+| v8 v4 on all sim frames | 0.946 (0.942 to 0.948) | 0.483 (0.465 to 0.507) | 0.462 (0.440 to 0.481) | 0.73 / 0.40 |
 
 mAP@0.5:0.95 on SARD: v0 0.301, v1 0.007, v2 0.013, v3 0.005, v4 0.235,
 v5 0.041, v6 0.255.
@@ -199,12 +203,22 @@ and licence in DETAILS.md). Scores from `docs/results/extra_real.csv`:
 | v4, + 300 SARD images | 0.231 (0.154 to 0.324) | 0.57 |
 | v6, v4 + randomized worlds | 0.262 (0.179 to 0.358) | 0.60 |
 | v7, v6 + box-built cars | 0.213 (0.142 to 0.302) | 0.55 |
+| v8, v4 on all sim frames | 0.261 (0.174 to 0.355) | 0.59 |
 
 Simulation-only training collapses again (0.030). The models that saw 300
 SARD images score above the untrained v0, though with only 101 images the
 mAP intervals overlap; their max recall (0.55 to 0.60 against 0.38) is the
 clearer gap. All scores are much lower than on SARD: the median person is
 56 x 53 px in a 4000 px photo, about 18 x 17 px at the model's 1280 input.
+
+**Finding 8. Four times the simulated data did not help on real photos.**
+v8 is v4 on all 24,667 simulated training frames. It scored 0.946 on
+simulation (v4 0.934) and 0.483 (0.465 to 0.507) on SARD, below all three
+v4 runs (0.532 to 0.586), with lower max recall (0.75 against 0.80). On
+HERIDAL it scored 0.261, inside v4's interval. One run, and confounded:
+the same 300 real images were 4.8 % of v4's training set and 1.2 % of
+v8's, so a smaller real share explains the result as well as more
+simulation does.
 
 ### Precision-recall curves
 
@@ -393,8 +407,9 @@ mission is unaffected because identity is decided from ground position.
 
 ## 7. What I would do next
 
-1. Train on the full simulated set, longer, with several seeds, and see
-   whether more simulated data moves the real score at all.
+1. Separate the two causes in v8: train on all simulated frames with the
+   real share held up, by using all 594 SARD pool images or repeating the
+   300 to make 5 %, over several seeds.
 2. Run the detector on full-resolution tiles: on HERIDAL the people
    shrink to about 18 px at the model's input size.
 3. Protect the head as well as the backbone: a lower learning rate, or
