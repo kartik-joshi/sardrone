@@ -247,6 +247,24 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   this project, so 17 of 20 is a check, not a benchmark.
 - **The retraining gate's threshold (200 hard frames) is not tuned.**
 
+## What's next
+
+v1.0 is complete; work continues. In rough order:
+
+1. **Tiled detection:** run the detector on full-resolution tiles. On
+   HERIDAL people shrink to about 18 px at the model's input size.
+2. **Untangle v8:** all simulated frames with the real share held at 5 %,
+   over several seeds, to tell "more simulation" from "less real".
+3. **Protect more of the network** in simulation-only training (freeze the
+   neck too, or lower the learning rate).
+4. **Richer simulated content:** real vehicle models, more body types,
+   vegetation and uneven terrain, since content is where the domains differ.
+5. **A better confirmation rule** for the low second pass.
+6. **The agent:** repeat runs to measure stability, try a newer model, and
+   connect it to the simulated flights instead of the mission simulator.
+
+Details in [docs/report.md](docs/report.md), section 7.
+
 ## Licences and credits
 
 - **This repository's code:** MIT ([LICENSE](LICENSE)). Use, copy and change
