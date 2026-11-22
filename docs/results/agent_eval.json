@@ -11,6 +11,20 @@
       "output_tokens": 0,
       "mean_latency_s": 0.0,
       "cost_usd": null
+    },
+    {
+      "model": "cohere:command-a-03-2025",
+      "missions": 20,
+      "succeeded": 17,
+      "success_rate": 0.85,
+      "valid_tool_call_rate": 1.0,
+      "mean_steps": 10.5,
+      "input_tokens": 587320,
+      "output_tokens": 12351,
+      "mean_latency_s": 38.288,
+      "cost_usd": null,
+      "model_calls": 212,
+      "rate_limited_retries": 1
     }
   ],
   "results": {
@@ -752,6 +766,726 @@
           "get_status",
           "get_status",
           "return_home"
+        ]
+      }
+    ],
+    "cohere:command-a-03-2025": [
+      {
+        "id": "m01",
+        "prompt": "Search the north field and report anyone you find.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 10,
+        "valid_calls": 10,
+        "calls": 10,
+        "ended": "returned_home",
+        "reported": [
+          "p1"
+        ],
+        "battery_at_end": 58.0,
+        "input_tokens": 26088,
+        "output_tokens": 543,
+        "latency_s": 32.672,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m02",
+        "prompt": "Search the south field for a hiker in a red jacket. Report only that person.",
+        "success": false,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": false
+        },
+        "failed_checks": [
+          "finished_every_search"
+        ],
+        "steps": 9,
+        "valid_calls": 9,
+        "calls": 9,
+        "ended": "returned_home",
+        "reported": [
+          "p2"
+        ],
+        "battery_at_end": 66.0,
+        "input_tokens": 22962,
+        "output_tokens": 512,
+        "latency_s": 54.479,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m03",
+        "prompt": "Search the east meadow. Come back when the battery drops to 75% or lower.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "obeyed_the_battery_limit": true
+        },
+        "failed_checks": [],
+        "steps": 7,
+        "valid_calls": 7,
+        "calls": 7,
+        "ended": "returned_home",
+        "reported": [],
+        "battery_at_end": 68.0,
+        "input_tokens": 17369,
+        "output_tokens": 460,
+        "latency_s": 24.471,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m04",
+        "prompt": "Fly low, at 15 metres, over the west woods and report every person.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "flew_at_the_requested_altitude": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 10,
+        "valid_calls": 10,
+        "calls": 10,
+        "ended": "returned_home",
+        "reported": [
+          "p1"
+        ],
+        "battery_at_end": 58.0,
+        "input_tokens": 26542,
+        "output_tokens": 592,
+        "latency_s": 35.298,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m05",
+        "prompt": "Search the north field first and then the south field. Report everyone.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 19,
+        "valid_calls": 19,
+        "calls": 19,
+        "ended": "returned_home",
+        "reported": [
+          "p1",
+          "p2"
+        ],
+        "battery_at_end": 21.0,
+        "input_tokens": 63467,
+        "output_tokens": 1161,
+        "latency_s": 66.384,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "get_status",
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m06",
+        "prompt": "Search the whole area for a missing child in a yellow raincoat. Do not report adults.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 12,
+        "valid_calls": 12,
+        "calls": 12,
+        "ended": "returned_home",
+        "reported": [
+          "p3"
+        ],
+        "battery_at_end": 50.0,
+        "input_tokens": 34334,
+        "output_tokens": 809,
+        "latency_s": 42.02,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m07",
+        "prompt": "Search the south field. Confirm any sighting so we know what it is, but do not report anyone; we only want a count.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "confirmed_the_sightings": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 10,
+        "valid_calls": 10,
+        "calls": 10,
+        "ended": "returned_home",
+        "reported": [],
+        "battery_at_end": 54.0,
+        "input_tokens": 27140,
+        "output_tokens": 655,
+        "latency_s": 35.244,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m08",
+        "prompt": "Search the east meadow at 40 m and report anyone lying down; they may be injured.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "flew_at_the_requested_altitude": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 11,
+        "valid_calls": 11,
+        "calls": 11,
+        "ended": "returned_home",
+        "reported": [
+          "p2"
+        ],
+        "battery_at_end": 54.0,
+        "input_tokens": 29672,
+        "output_tokens": 588,
+        "latency_s": 38.544,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m09",
+        "prompt": "Search the north field for anyone. Return home once the battery is at 30% or below.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "obeyed_the_battery_limit": true
+        },
+        "failed_checks": [],
+        "steps": 7,
+        "valid_calls": 7,
+        "calls": 7,
+        "ended": "returned_home",
+        "reported": [
+          "p1"
+        ],
+        "battery_at_end": 21.0,
+        "input_tokens": 16848,
+        "output_tokens": 394,
+        "latency_s": 24.378,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m10",
+        "prompt": "Search the west woods. Nobody may be there; if you find no one, just come home.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 8,
+        "valid_calls": 8,
+        "calls": 8,
+        "ended": "returned_home",
+        "reported": [],
+        "battery_at_end": 62.0,
+        "input_tokens": 19768,
+        "output_tokens": 365,
+        "latency_s": 28.153,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "get_status",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m11",
+        "prompt": "We lost two hikers, one in an orange jacket and one in a green jacket, somewhere in the whole area. Report both; ignore anyone else.",
+        "success": false,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": false
+        },
+        "failed_checks": [
+          "finished_every_search"
+        ],
+        "steps": 12,
+        "valid_calls": 12,
+        "calls": 12,
+        "ended": "returned_home",
+        "reported": [
+          "p1",
+          "p3"
+        ],
+        "battery_at_end": 56.0,
+        "input_tokens": 33986,
+        "output_tokens": 773,
+        "latency_s": 41.988,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m12",
+        "prompt": "Search the field to the north of the launch point and report anybody there.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 10,
+        "valid_calls": 10,
+        "calls": 10,
+        "ended": "returned_home",
+        "reported": [
+          "p1"
+        ],
+        "battery_at_end": 58.0,
+        "input_tokens": 26207,
+        "output_tokens": 544,
+        "latency_s": 35.112,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m13",
+        "prompt": "Search the south field at twenty-five metres. Report people wearing blue.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "flew_at_the_requested_altitude": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 11,
+        "valid_calls": 11,
+        "calls": 11,
+        "ended": "returned_home",
+        "reported": [
+          "p1"
+        ],
+        "battery_at_end": 54.0,
+        "input_tokens": 29634,
+        "output_tokens": 627,
+        "latency_s": 38.814,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m14",
+        "prompt": "Check the east meadow, then the west woods. Come back below 40% battery whatever happens.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "obeyed_the_battery_limit": true
+        },
+        "failed_checks": [],
+        "steps": 17,
+        "valid_calls": 17,
+        "calls": 17,
+        "ended": "returned_home",
+        "reported": [
+          "p1",
+          "p2"
+        ],
+        "battery_at_end": 33.0,
+        "input_tokens": 52844,
+        "output_tokens": 915,
+        "latency_s": 59.387,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "get_status",
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m15",
+        "prompt": "Search the north field. Report anyone except people in black; those are our own rescue team.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 11,
+        "valid_calls": 11,
+        "calls": 11,
+        "ended": "returned_home",
+        "reported": [
+          "p2"
+        ],
+        "battery_at_end": 54.0,
+        "input_tokens": 30110,
+        "output_tokens": 649,
+        "latency_s": 38.605,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m16",
+        "prompt": "Search the whole area and report everyone you can find.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 14,
+        "valid_calls": 14,
+        "calls": 14,
+        "ended": "returned_home",
+        "reported": [
+          "p1",
+          "p2",
+          "p3"
+        ],
+        "battery_at_end": 50.0,
+        "input_tokens": 41253,
+        "output_tokens": 883,
+        "latency_s": 51.371,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m17",
+        "prompt": "Search the south field for a person in a white shirt who is sitting down. Report only that person.",
+        "success": false,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": false
+        },
+        "failed_checks": [
+          "finished_every_search"
+        ],
+        "steps": 9,
+        "valid_calls": 9,
+        "calls": 9,
+        "ended": "returned_home",
+        "reported": [
+          "p2"
+        ],
+        "battery_at_end": 66.0,
+        "input_tokens": 23068,
+        "output_tokens": 512,
+        "latency_s": 31.525,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "confirm_target",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m18",
+        "prompt": "Search the west woods at 15 m. Head home at 50% battery or less.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "flew_at_the_requested_altitude": true,
+          "reported_exactly_the_right_people": true,
+          "obeyed_the_battery_limit": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 10,
+        "valid_calls": 10,
+        "calls": 10,
+        "ended": "returned_home",
+        "reported": [
+          "p1"
+        ],
+        "battery_at_end": 58.0,
+        "input_tokens": 26562,
+        "output_tokens": 587,
+        "latency_s": 35.216,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m19",
+        "prompt": "Search the east meadow and report anyone. If you find more than one person, report them all before coming home.",
+        "success": true,
+        "checks": {
+          "ended_at_home": true,
+          "searched_the_right_areas_in_order": true,
+          "reported_exactly_the_right_people": true,
+          "finished_every_search": true
+        },
+        "failed_checks": [],
+        "steps": 12,
+        "valid_calls": 12,
+        "calls": 12,
+        "ended": "returned_home",
+        "reported": [
+          "p1",
+          "p2"
+        ],
+        "battery_at_end": 54.0,
+        "input_tokens": 33076,
+        "output_tokens": 645,
+        "latency_s": 42.035,
+        "tools": [
+          "set_search_area",
+          "start_search",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "get_status",
+          "confirm_target",
+          "report_person",
+          "get_status",
+          "return_home"
+        ]
+      },
+      {
+        "id": "m20",
+        "prompt": "Do not launch the drone. Just tell me its current status.",
+        "success": true,
+        "checks": {
+          "did_not_take_off": true,
+          "nothing_reported": true
+        },
+        "failed_checks": [],
+        "steps": 1,
+        "valid_calls": 1,
+        "calls": 1,
+        "ended": "model_stopped",
+        "reported": [],
+        "battery_at_end": 100.0,
+        "input_tokens": 6390,
+        "output_tokens": 137,
+        "latency_s": 10.074,
+        "tools": [
+          "get_status"
         ]
       }
     ]

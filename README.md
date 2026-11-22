@@ -81,6 +81,16 @@ Scored against exact simulator labels, OWLv2 reached 90 % precision at 77 %
 recall, and found 93 % of people in the open but 37 % of those under trees.
 [docs/results/auto_labeler.md](docs/results/auto_labeler.md)
 
+**5. A language model turns plain-English missions into correct tool calls
+far more often than keyword rules.** On 20 written missions against a
+mission simulator, Cohere's `command-a-03-2025` passed 17 against 9 for a
+rule-based baseline, with every tool call valid. It handled the missions
+keyword rules cannot ("fly low, at 15 metres", "do not report adults",
+"except people in black", "do not launch the drone"). All three failures
+are the same habit: having reported exactly the right people, it flew home
+before finishing the search, which the scorer counts as a failure.
+[docs/results/agent_eval.md](docs/results/agent_eval.md)
+
 ## How it fits together
 
 ```
@@ -232,10 +242,9 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 - **The tracker fragments.** People leave and re-enter the picture and the
   drone's own motion is not compensated; identity is decided by ground
   position instead.
-- **The mission agent has not been run with a language model.** The
-  evaluation harness and a rule-based baseline exist; the Cohere back-end
-  is checked offline against the SDK's own request and response types,
-  but has not called the live API.
+- **The mission agent flies a mission simulator, not the drone,** and was
+  run once per mission with one model. Its 20 missions were written for
+  this project, so 17 of 20 is a check, not a benchmark.
 - **The retraining gate's threshold (200 hard frames) is not tuned.**
 
 ## Licences and credits

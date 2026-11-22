@@ -326,6 +326,32 @@ enough for the detector to mistake far more often. One flight per world.
 The double report exposed a bug, since fixed: a confirmation that ends on
 an already-reported spot is no longer reported again.
 
+### The mission agent
+
+Source: `docs/results/agent_eval.md` and `agent_eval.json`, commit 3127630.
+Twenty plain-English missions, each scored by checks fixed before any model
+ran (right areas in order, right altitude, exactly the right people
+reported, battery limit obeyed, every search finished, home at the end).
+
+| Model | Missions passed | Valid tool calls | Mean steps |
+| --- | --- | --- | --- |
+| Rule-based keywords | 9 of 20 | 100 % | 10.5 |
+| Cohere `command-a-03-2025`, temperature 0 | 17 of 20 | 100 % | 10.5 |
+
+Of the eleven missions the keyword rules fail, the model passed nine,
+among them altitude in words, two areas in order, "do not report adults",
+"except people in black", and "do not launch the drone" (one status call,
+no take-off). Of the nine the rules pass, it passed eight. Its three failures (m02, m11, m17) are one behaviour: each asks
+for specific people, and having confirmed and reported exactly them, the
+model went home with the search unfinished. Whether that is a fault
+depends on the operator; the scorer was written to require full coverage,
+and that rule was not changed after seeing the results.
+
+212 model calls, 587,320 input and 12,351 output tokens, 38 s per mission
+(mostly the 3.5 s spacing the free trial key's rate limit requires). One
+call was rate-limited and retried with the identical request. No cost is
+computed: the trial key is free and no price was assumed.
+
 ### The auto-labeller
 
 Source: `docs/results/auto_labeler.md`. OWLv2 (base, patch 16, ensemble)
@@ -400,10 +426,11 @@ mission is unaffected because identity is decided from ground position.
 - **v2 is not a clean ablation of v1.** Its 6,000 frames come from 30
   flights, v1's from 54. (v6 later combined randomization with real data;
   see Finding 6.)
-- **Planned and not done at the time of writing:** a mission agent driven
-  by a language model (the evaluation harness exists; no model call was
-  made), and weather (this Gazebo setup does not render fog; see the
-  README limitations).
+- **Planned and not done at the time of writing:** weather (this Gazebo
+  setup does not render fog; see the README limitations).
+- **The mission agent was evaluated once per mission, with one model, on
+  20 missions written for this project, against a simulator of the
+  mission, not the drone.
 - **Small counts in the closed-loop breakdowns:** 9 to 34 people per cell.
 
 ## 7. What I would do next

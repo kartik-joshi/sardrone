@@ -698,9 +698,7 @@ not report), m12 ("the field to the north") and m20 ("do not launch").
 
 ### Not done
 
-- **No Cohere call has been made.** It needs `COHERE_API_KEY` and
-  `COHERE_MODEL` in `.env`, and it costs money. The adapter is therefore
-  untested against the live API.
+- (Superseded 2026-11-22: the live run is below.)
 - Cost is only computed from prices given on the command line. None is
   assumed.
 - The agent acts on the simulator, not the drone. Its decisions are passed
@@ -1389,3 +1387,38 @@ minutes of training on the laptop's GPU (MPS).
 
 So, more simulated frames of the same narrow worlds did not help the real
 score. It is the same lesson as v2 and v3, from a different direction.
+
+## Phase 4A: the mission agent with a real model (2026-11-22)
+
+- Trial key in `.env` (git-ignored). The key can use 17 chat models
+  (`ClientV2.models.list(endpoint="chat")`); `command-a-03-2025` was used,
+  as configured. A newer `command-a-plus-05-2026` is available and was not
+  tried.
+- First, one mission (m01) as a live check of the adapter: passed, 10
+  valid tool calls, so the offline-tested request and response handling
+  holds against the real API.
+- The first full run stopped with a 429: the trial key allows 20 calls a
+  minute, and 3.2 s spacing left no margin. Fixed at commit 3127630:
+  3.5 s spacing, and a 429 is retried with the identical request after a
+  wait (tested; the count is recorded). Nothing from the stopped run is
+  used.
+- Full run at 3127630, clean tree: `python -m sardrone.agent.evaluate
+  --model rule-based --model cohere`.
+
+| Model | Passed | Valid tool calls | Mean steps | Tokens in / out | Mean latency |
+| --- | --- | --- | --- | --- | --- |
+| rule-based | 9 of 20 | 100 % | 10.5 | 0 / 0 | 0 s |
+| cohere:command-a-03-2025 | 17 of 20 | 100 % | 10.5 | 587,320 / 12,351 | 38.3 s |
+
+212 model calls, one 429 retried.
+
+- Of the eleven missions the keyword rules fail (m04 to m08, m11, m12,
+  m14, m15, m17, m20), it passed nine; m11 and m17 are two of its three
+  failures. Of the nine the rules pass, it failed one (m02). m20 ("do not
+  launch") took one status call and stopped.
+- It failed m02, m11 and m17, all on `finished_every_search` only. Each
+  asks for specific people; it reported exactly them and went home with
+  the area unfinished. Arguably sensible, but the scorer was fixed before
+  the run and requires full coverage, so these stay failures.
+- One run per mission. Temperature 0 and a fixed seed, but Cohere does not
+  promise identical output, so repeat runs would show how stable 17 is.

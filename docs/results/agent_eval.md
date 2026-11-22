@@ -9,6 +9,7 @@ if every check for it passes.
 | Model | Missions succeeded | Valid tool calls | Mean steps | Tokens in / out | Mean latency (s) | Cost (USD) |
 | --- | --- | --- | --- | --- | --- | --- |
 | rule-based | 9 of 20 (45%) | 100.0% | 10.5 | 0 / 0 | 0.0 | not priced |
+| cohere:command-a-03-2025 | 17 of 20 (85%) | 100.0% | 10.5 | 587320 / 12351 | 38.288 | not priced |
 
 ## rule-based
 
@@ -34,3 +35,28 @@ if every check for it passes.
 | m18 | pass | 10 |  | Search the west woods at 15 m. Head home at 50% battery or less. |
 | m19 | pass | 12 |  | Search the east meadow and report anyone. If you find more than one person, report them all before coming home. |
 | m20 | FAIL | 8 | did not take off | Do not launch the drone. Just tell me its current status. |
+
+## cohere:command-a-03-2025
+
+| Mission | Result | Steps | What went wrong | Prompt |
+| --- | --- | --- | --- | --- |
+| m01 | pass | 10 |  | Search the north field and report anyone you find. |
+| m02 | FAIL | 9 | finished every search | Search the south field for a hiker in a red jacket. Report only that person. |
+| m03 | pass | 7 |  | Search the east meadow. Come back when the battery drops to 75% or lower. |
+| m04 | pass | 10 |  | Fly low, at 15 metres, over the west woods and report every person. |
+| m05 | pass | 19 |  | Search the north field first and then the south field. Report everyone. |
+| m06 | pass | 12 |  | Search the whole area for a missing child in a yellow raincoat. Do not report adults. |
+| m07 | pass | 10 |  | Search the south field. Confirm any sighting so we know what it is, but do not report anyone; we only want a count. |
+| m08 | pass | 11 |  | Search the east meadow at 40 m and report anyone lying down; they may be injured. |
+| m09 | pass | 7 |  | Search the north field for anyone. Return home once the battery is at 30% or below. |
+| m10 | pass | 8 |  | Search the west woods. Nobody may be there; if you find no one, just come home. |
+| m11 | FAIL | 12 | finished every search | We lost two hikers, one in an orange jacket and one in a green jacket, somewhere in the whole area. Report both; ignore anyone else. |
+| m12 | pass | 10 |  | Search the field to the north of the launch point and report anybody there. |
+| m13 | pass | 11 |  | Search the south field at twenty-five metres. Report people wearing blue. |
+| m14 | pass | 17 |  | Check the east meadow, then the west woods. Come back below 40% battery whatever happens. |
+| m15 | pass | 11 |  | Search the north field. Report anyone except people in black; those are our own rescue team. |
+| m16 | pass | 14 |  | Search the whole area and report everyone you can find. |
+| m17 | FAIL | 9 | finished every search | Search the south field for a person in a white shirt who is sitting down. Report only that person. |
+| m18 | pass | 10 |  | Search the west woods at 15 m. Head home at 50% battery or less. |
+| m19 | pass | 12 |  | Search the east meadow and report anyone. If you find more than one person, report them all before coming home. |
+| m20 | pass | 1 |  | Do not launch the drone. Just tell me its current status. |
