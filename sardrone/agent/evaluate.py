@@ -210,6 +210,9 @@ def main(argv: list[str] | None = None) -> int:
         results_by_model[model.name] = results
         print(json.dumps(summaries[-1], indent=2))
         print("failed:", [(r["id"], r["failed_checks"]) for r in results if not r["success"]])
+        if hasattr(model, "rate_limited"):
+            summaries[-1]["model_calls"], summaries[-1]["rate_limited_retries"] = model.calls, model.rate_limited
+            print(f"model calls {model.calls}, rate-limited and retried {model.rate_limited}")
     write_report(summaries, results_by_model)
     print(f"report: {RESULTS / 'agent_eval.md'}")
     return 0

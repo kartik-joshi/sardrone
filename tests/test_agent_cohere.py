@@ -76,6 +76,7 @@ def adapter(responses):
     model = CohereModel.__new__(CohereModel)  # skip __init__: no key, no network
     model.model, model.name, model.temperature, model.seed = "test-model", "cohere:test-model", 0.0, 51
     model.min_gap_s, model._last_call, model.calls = 0.0, 0.0, 0
+    model.retry_wait_s, model.max_retries, model.rate_limited = 0.0, 2, 0
     model._client = FakeClient(responses)
     return model
 
@@ -163,3 +164,56 @@ def test_the_sdk_types_really_reject_malformed_messages(model_type, data):
 
     with pytest.raises(ValidationError):
         model_type.model_validate(data)
+
+
+class RateLimitedOnce(FakeClient):
+    """Answers the first request with a 429, as a trial key does when the
+    per-minute limit is hit, then behaves normally."""
+
+    def __init__(self, responses, failures=1):
+        super().__init__(responses)
+        self.failures = failures
+
+    def chat(self, **request):
+        from cohere.errors import TooManyRequestsError
+
+        if self.failures:
+            self.failures -= 1
+            self.requests.append(json.loads(json.dumps(request)))
+            raise TooManyRequestsError(body={"message": "limited to 20 API calls / minute"})
+        return super().chat(**request)
+
+
+def _one_tool_call_response():
+    return V2ChatResponse.model_validate(
+        {
+            "id": "r1",
+            "finish_reason": "TOOL_CALL",
+            "message": {
+                "role": "assistant",
+                "tool_calls": [{"id": "c1", "type": "function",
+                                "function": {"name": "get_status", "arguments": "{}"}}],
+            },
+        }
+    )
+
+
+def test_a_429_is_retried_with_the_identical_request():
+    import pytest
+
+    from sardrone.agent.tools import TOOLS
+
+    model = adapter([])
+    model._client = RateLimitedOnce([_one_tool_call_response()])
+    reply = model.reply([{"role": "user", "content": "status?"}], TOOLS)
+    assert [c.name for c in reply.tool_calls] == ["get_status"]
+    assert model.rate_limited == 1 and model.calls == 1
+    first, second = model._client.requests
+    assert first == second
+
+    model = adapter([])
+    model._client = RateLimitedOnce([], failures=5)
+    from cohere.errors import TooManyRequestsError
+
+    with pytest.raises(TooManyRequestsError):
+        model.reply([{"role": "user", "content": "status?"}], TOOLS)

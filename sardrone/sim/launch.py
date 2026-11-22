@@ -75,15 +75,24 @@ def px4_environment(spec: dict) -> dict:
     return env
 
 
+def _shown(path: Path) -> str:
+    """A path for messages that end up in committed manifests: relative to the
+    project when it is inside it, so no home folder name is recorded."""
+    try:
+        return str(Path(path).resolve().relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def _wait_for(log: Path, needle: str, process: subprocess.Popen, timeout_s: float, what: str) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if log.exists() and needle in log.read_text(errors="replace"):
             return
         if process.poll() is not None:
-            raise SimulationError(f"{what} exited early; see {log}")
+            raise SimulationError(f"{what} exited early; see {_shown(log)}")
         time.sleep(0.5)
-    raise SimulationError(f"{what} was not ready after {timeout_s:g} s; see {log}")
+    raise SimulationError(f"{what} was not ready after {timeout_s:g} s; see {_shown(log)}")
 
 
 def _stop(process: subprocess.Popen | None) -> None:
@@ -168,11 +177,11 @@ class Simulation:
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             if self._gazebo.poll() is not None:
-                raise SimulationError(f"Gazebo exited early; see {gz_log}")
+                raise SimulationError(f"Gazebo exited early; see {_shown(gz_log)}")
             if self._clock_topic() in self._topics():
                 return
             time.sleep(1.0)
-        raise SimulationError(f"Gazebo world was not ready after {timeout_s:g} s; see {gz_log}")
+        raise SimulationError(f"Gazebo world was not ready after {timeout_s:g} s; see {_shown(gz_log)}")
 
     def stop(self) -> None:
         _stop(self._px4)

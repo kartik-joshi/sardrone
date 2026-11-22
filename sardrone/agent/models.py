@@ -68,13 +68,18 @@ class CohereModel:
     """
 
     def __init__(self, model: str | None = None, temperature: float = 0.0, seed: int = 51,
-                 min_seconds_between_calls: float = 3.2):  # fmt: skip
+                 min_seconds_between_calls: float = 3.5, retry_wait_s: float = 20.0,
+                 max_retries: int = 6):  # fmt: skip
         import cohere
 
         # A free trial key allows 20 chat requests per minute (Cohere's
-        # rate-limit page, checked 2026-11-16). 3.2 s between calls stays
-        # under that. Set to 0 with a production key.
+        # rate-limit page, checked 2026-11-16). 3.5 s between calls stays
+        # under that; 3.2 s did not leave enough margin on 2026-11-22 (one
+        # 429 mid-run). Set to 0 with a production key. A 429 is retried
+        # with the identical request after a wait, so it cannot change
+        # what the model decides; retries are counted in `rate_limited`.
         self.min_gap_s = min_seconds_between_calls
+        self.retry_wait_s, self.max_retries, self.rate_limited = retry_wait_s, max_retries, 0
         self._last_call = 0.0
         self.calls = 0
 
@@ -95,15 +100,25 @@ class CohereModel:
         wait = self.min_gap_s - (time.monotonic() - self._last_call)
         if wait > 0:
             time.sleep(wait)
-        self._last_call = time.monotonic()
+        from cohere.errors import TooManyRequestsError
+
         self.calls += 1
-        response = self._client.chat(
-            model=self.model,
-            messages=messages,
-            tools=[{"type": "function", "function": tool} for tool in tools],
-            temperature=self.temperature,
-            seed=self.seed,
-        )
+        for attempt in range(self.max_retries + 1):
+            self._last_call = time.monotonic()
+            try:
+                response = self._client.chat(
+                    model=self.model,
+                    messages=messages,
+                    tools=[{"type": "function", "function": tool} for tool in tools],
+                    temperature=self.temperature,
+                    seed=self.seed,
+                )
+                break
+            except TooManyRequestsError:
+                if attempt == self.max_retries:
+                    raise
+                self.rate_limited += 1
+                time.sleep(self.retry_wait_s * (attempt + 1))
         message = response.message
         calls = tuple(
             ToolCall(call.id, call.function.name, json.loads(call.function.arguments or "{}"))
