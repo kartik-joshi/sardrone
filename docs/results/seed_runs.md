@@ -6,11 +6,11 @@ intervals. Gap = simulated minus real: the smaller, the better the transfer.
 
 | Version | Change | Sim mAP@0.5 | Real mAP@0.5 | Gap | Sim P / R | Real P / R | Train images | Data hash | Commit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| v1_s52 | v1 again, training seed 52 | 0.946 (0.943 to 0.951) | 0.011 (0.009 to 0.017) | 0.934 (0.928 to 0.939) | 0.98 / 0.92 | 0.28 / 0.01 | 5999 | `d741bdbb19fbe45d` | `a2e0a3a` |
-| v4_s52 | v4 again, training seed 52 | 0.937 (0.931 to 0.941) | 0.586 (0.567 to 0.606) | 0.351 (0.329 to 0.371) | 0.97 / 0.92 | 0.70 / 0.64 | 6299 | `7918bf71d200e0da` | `a2e0a3a` |
-| v4_s53 | v4 again, training seed 53 | 0.934 (0.930 to 0.940) | 0.532 (0.513 to 0.554) | 0.401 (0.380 to 0.422) | 0.98 / 0.92 | 0.70 / 0.57 | 6299 | `7918bf71d200e0da` | `a2e0a3a` |
-| v6_s52 | v6 again, training seed 52 | 0.925 (0.918 to 0.929) | 0.526 (0.509 to 0.547) | 0.400 (0.377 to 0.417) | 0.96 / 0.88 | 0.58 / 0.64 | 6300 | `1acc17da393128c2` | `b422311` |
-| v6_s53 | v6 again, training seed 53 | 0.930 (0.926 to 0.937) | 0.587 (0.569 to 0.607) | 0.343 (0.323 to 0.362) | 0.97 / 0.88 | 0.57 / 0.68 | 6300 | `1acc17da393128c2` | `b422311` |
+| v1_s52 | v1 again, training seed 52 | 0.946 (0.943 to 0.951) | 0.011 (0.009 to 0.017) | 0.934 (0.928 to 0.939) | 0.98 / 0.92 | 0.28 / 0.01 | 5999 | `d741bdbb19fbe45d` | `57e5bc4` |
+| v4_s52 | v4 again, training seed 52 | 0.937 (0.931 to 0.941) | 0.586 (0.567 to 0.606) | 0.351 (0.329 to 0.371) | 0.97 / 0.92 | 0.70 / 0.64 | 6299 | `7918bf71d200e0da` | `57e5bc4` |
+| v4_s53 | v4 again, training seed 53 | 0.934 (0.930 to 0.940) | 0.532 (0.513 to 0.554) | 0.401 (0.380 to 0.422) | 0.98 / 0.92 | 0.70 / 0.57 | 6299 | `7918bf71d200e0da` | `57e5bc4` |
+| v6_s52 | v6 again, training seed 52 | 0.925 (0.918 to 0.929) | 0.526 (0.509 to 0.547) | 0.400 (0.377 to 0.417) | 0.96 / 0.88 | 0.58 / 0.64 | 6300 | `1acc17da393128c2` | `afd87ca` |
+| v6_s53 | v6 again, training seed 53 | 0.930 (0.926 to 0.937) | 0.587 (0.569 to 0.607) | 0.343 (0.323 to 0.362) | 0.97 / 0.88 | 0.57 / 0.68 | 6300 | `1acc17da393128c2` | `afd87ca` |
 
 Precision and recall are at the confidence cut-off chosen on the validation set
 (column `confidence` in the CSV), IoU 0.5.

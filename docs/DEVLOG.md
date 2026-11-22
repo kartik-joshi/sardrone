@@ -168,7 +168,7 @@ One entry per phase: what was done, what broke, what was learned.
   cards so each option appears about equally often.
 - The FiftyOne loader copies the new sidecar fields.
 
-### Result: `configs/pilot10.yaml`, PX4 SITL, oracle detector, commit ddc06b4
+### Result: `configs/pilot10.yaml`, PX4 SITL, oracle detector, commit 1fd6d6a
 
 | | |
 | --- | --- |
@@ -190,7 +190,7 @@ world, time of day, altitude and detector.
   that imports the code from disk, but the commit hash is read once at the
   start. An edit mid-batch would give later episodes different code under
   the same recorded commit. I committed the runner first, then ran, so every
-  line says `ddc06b4`, `dirty: no`.
+  line says `1fd6d6a`, `dirty: no`.
 - **Logs were empty while episodes ran.** Output written to a file is
   buffered. The batch now sets `PYTHONUNBUFFERED` for episodes and flushes
   its own progress lines. (Fixed after this run.)
@@ -237,7 +237,7 @@ At this run's averages (231 s, 189 MB, 263 s wall per episode): about
   has `ground_truth` Detections and links to `episode_id` and `timestamp_ns`.
 - `make overlay` saves 20 seeded random frames with boxes and 4x crops.
 
-### Result (pilot batch re-recorded at commit 56c0763, plus one earlier search)
+### Result (pilot batch re-recorded at commit 987224d, plus one earlier search)
 
 | | |
 | --- | --- |
@@ -345,7 +345,7 @@ Threshold sweep (within-episode cosine distance):
 0.006 is the largest value at which under 1 % of the removed frames differ
 in people count from the frame kept (5 of 573 = 0.9 %).
 
-### Auto-labeller against ground truth (commit 71571aa, 4,105 unique frames, 6,078 people)
+### Auto-labeller against ground truth (commit e200c3c, 4,105 unique frames, 6,078 people)
 
 Full tables: `docs/results/auto_labeler.md`.
 
@@ -418,7 +418,7 @@ The 75-episode v1 batch takes about six hours. Training would compete with
 the simulator for CPU and GPU and could push episodes past their time
 limit, so only code the batch does not use was written meanwhile. No file
 under `sardrone/` that an episode imports was touched after the batch
-started at commit 33d89df.
+started at commit 241a85d.
 
 ### Done
 
@@ -476,7 +476,7 @@ started at commit 33d89df.
 
 ## v1 dataset, and Phases 3A and 3B: the first model and the first gap (2026-11-16)
 
-### The v1 dataset (commit 33d89df)
+### The v1 dataset (commit 241a85d)
 
 | | |
 | --- | --- |
@@ -500,7 +500,7 @@ two at 25 m), so validation people are smaller than average.
   size. Reason: at 1280 px this Mac trains about 8 images per second, so a
   full epoch would take 52 minutes and 10 epochs most of a day.
 - YOLO11n from COCO weights, 10 epochs, 1280 px, batch 8, MPS, seed 51,
-  Ultralytics 8.4.214, torch 2.15.0, commit 11045a0. 150 minutes.
+  Ultralytics 8.4.214, torch 2.15.0, commit f874f72. 150 minutes.
 - Ultralytics' own validation on `val-v1`: mAP@0.5 0.953, mAP@0.5:0.95 0.720,
   still rising at the last epoch.
 
@@ -577,7 +577,7 @@ what it was built on.
   degraded once (exposure 0.8 to 1.2, gamma 0.85 to 1.15, blur on half of
   them up to 1.2 px, noise sigma 1 to 6, JPEG quality 35 to 85), seeded by
   file name. Validation images are untouched.
-- Same network, epochs and settings as v1. 149.8 minutes, commit 06d5f53.
+- Same network, epochs and settings as v1. 149.8 minutes, commit 590d470.
 
 | Version | Sim-test mAP@0.5 | SARD mAP@0.5 | Gap |
 | --- | --- | --- | --- |
@@ -607,7 +607,7 @@ stone and on roads.
 - Same network, epochs and settings. 161.2 minutes. The run record says
   `dirty: True`: when training started, the scorecard files written by
   the v3 evaluation were not committed yet. No code differed from commit
-  e316ec6.
+  d3c4e34.
 
 | Version | Sim-test mAP@0.5 | SARD mAP@0.5 | Gap | SARD precision / recall |
 | --- | --- | --- | --- | --- |
@@ -814,12 +814,12 @@ Where the six misses are:
   coloured boxes). Rows without the switch are unchanged: all 75 recorded
   v1 worlds were regenerated and compared, with no difference.
 - `configs/v2.yaml`: 30 randomized training episodes, recorded at commit
-  c9ab4b8 in 2.5 h. 30 of 30 completed; one (dr-023) needed its retry
+  5a4a877 in 2.5 h. 30 of 30 completed; one (dr-023) needed its retry
   because PX4 was not ready within 60 s. 90 of 90 people reported (oracle).
   14,241 frames, of which 13,760 after de-duplication (`train-v2-dr`).
 - Export `v2-6k`, hash `61b514bcb1580625`: 6,000 of those frames by
   episode. Same network, epochs and settings as v1. 177.8 minutes, commit
-  d449626. Validation and test sets are the v1 ones (plain worlds).
+  99e8568. Validation and test sets are the v1 ones (plain worlds).
 
 ### Predicted before training
 
@@ -890,7 +890,7 @@ should keep the real score.
   YOLO11's backbone is modules 0 to 10, so those keep their COCO weights
   and only the neck and detection head train. The training log lists the
   frozen layers. 113.5 minutes (faster, since fewer gradients are computed),
-  commit 5d031ae.
+  commit 5e48845.
 
 | Version | Sim-test mAP@0.5 | SARD mAP@0.5 | SARD precision / recall |
 | --- | --- | --- | --- |
@@ -921,7 +921,7 @@ Does it add anything once real examples are in the training set?
   randomized flights, degraded like v3's, plus the same 300 real images as
   v4 (same seed, same draw from `sard-train-pool`). Same settings. 165.4
   minutes. The run record says `dirty: True` because the v5 dev-log entry
-  was not committed yet when it started; the code is commit 5d031ae.
+  was not committed yet when it started; the code is commit 5e48845.
 
 | Version | Simulated frames | Sim-test mAP@0.5 | SARD mAP@0.5 | Gap | SARD precision / recall |
 | --- | --- | --- | --- | --- | --- |
@@ -964,7 +964,7 @@ tests it directly.
 Question: every version was trained once. How much does a score move when
 the SAME recipe is trained again? Three repeat runs, same export, same
 settings, only the training seed changed (51 was the original). Commit
-a2e0a3a. Results in `docs/results/seed_runs.csv`.
+57e5bc4. Results in `docs/results/seed_runs.csv`.
 
 | Run | Sim-test mAP@0.5 | SARD mAP@0.5 (95 % interval over images) |
 | --- | --- | --- |
@@ -1011,7 +1011,7 @@ over the tree-covered part of the area, find them?
 - `search --second-pass`: after the main lanes, the drone flies a second
   lawnmower over a rectangle around all tree canopies (the simplest
   land-cover map), at the lowest safe altitude (15 m here), with lanes at
-  90 degrees to the first. Commit a2e0a3a plus the batch flag in ed245c0.
+  90 degrees to the first. Commit 57e5bc4 plus the batch flag in bf5e936.
 - Flown on PX4 SITL on the five forest-edge sim-test worlds with the same
   detector (v4) and settings as the first closed-loop batch. 65.7 minutes.
   Table: `docs/results/closed_loop_v4_second_pass.md`.
@@ -1067,7 +1067,7 @@ The test for it first passed without ever reaching the duplicate case
 a second time it switched modes during takeoff. It now forces the case and
 was checked to fail with the fix switched off.
 
-Re-flown on PX4 (test-007, second pass, detector v4, commit e878cbc):
+Re-flown on PX4 (test-007, second pass, detector v4, commit a239ba0):
 
 | test-007 | Found | False reports | False alarms | Duplicates avoided | Flight time |
 | --- | --- | --- | --- | --- | --- |
@@ -1210,7 +1210,7 @@ a trial key allows tool use, or how well a Cohere model does the missions.
 
 The v6 export was rebuilt from scratch first (its export had been deleted
 to free disk); the hash matched the original, `1acc17da393128c2`, so the
-same images and labels were used. Commit b422311 and earlier; results in
+same images and labels were used. Commit afd87ca and earlier; results in
 `docs/results/seed_runs.csv`.
 
 | Recipe | Seed 51 | Seed 52 | Seed 53 | Mean | Spread |
@@ -1279,14 +1279,14 @@ consistent across worlds; the size is not established.
 ## v7: randomized worlds with parked vehicles (2026-11-17)
 
 - `configs/v7.yaml`: 30 randomized episodes, 1 to 3 box-built cars each,
-  recorded at commit d4bb134; 30 of 30 completed (veh-020 failed once,
+  recorded at commit ed1ef5e; 30 of 30 completed (veh-020 failed once,
   PX4 not ready within 60 s, and passed on its retry); the oracle reported
   88 of the 90 people placed. (Corrected 2026-11-18: this entry first said
-  commit 3376c1d, which is v7's training commit, and 90 of 90.)
+  commit 0cceff3, which is v7's training commit, and 90 of 90.)
 - Export `v7-6k`, hash `e411d1520339f4fb`: 6,000 frames from those flights,
   camera realism, plus the same 300 real images as v4 and v6. Same
   settings. 164.6 minutes. Recorded as `dirty: True` (documentation and
-  tests uncommitted at the start; training code as in 3376c1d).
+  tests uncommitted at the start; training code as in 0cceff3).
 
 | Recipe | Real (SARD) mAP@0.5 | Sim-test mAP@0.5 |
 | --- | --- | --- |
@@ -1362,7 +1362,7 @@ Question from the report's "next" list: does more simulated data move the
 real score at all? v8 is v4 exactly (camera realism, the same 300 real
 SARD images, 10 epochs, 1280, seed 51) but on all 24,667 simulated
 training frames instead of a 6,000-frame sample. Export `v8-full`, hash
-`c09b4aca41099b26`, 24,967 images. Commit fad68c4, clean tree. 576.6
+`c09b4aca41099b26`, 24,967 images. Commit af1a931, clean tree. 576.6
 minutes of training on the laptop's GPU (MPS).
 
 | | Sim-test mAP@0.5 | Real SARD mAP@0.5 | SARD max recall | HERIDAL mAP@0.5 |
@@ -1398,11 +1398,11 @@ score. It is the same lesson as v2 and v3, from a different direction.
   valid tool calls, so the offline-tested request and response handling
   holds against the real API.
 - The first full run stopped with a 429: the trial key allows 20 calls a
-  minute, and 3.2 s spacing left no margin. Fixed at commit 3b11a4b:
+  minute, and 3.2 s spacing left no margin. Fixed at commit facb659:
   3.5 s spacing, and a 429 is retried with the identical request after a
   wait (tested; the count is recorded). Nothing from the stopped run is
   used.
-- Full run at 3b11a4b, clean tree: `python -m sardrone.agent.evaluate
+- Full run at facb659, clean tree: `python -m sardrone.agent.evaluate
   --model rule-based --model cohere`.
 
 | Model | Passed | Valid tool calls | Mean steps | Tokens in / out | Mean latency |
@@ -1432,3 +1432,7 @@ That gave 38 commits new IDs. Every commit ID cited in the docs and
 results was updated to its new ID, and `docs/results/commit_map.csv` maps
 each old ID to its new one, for commit messages and older files that
 still quote an old ID.
+
+A second rewrite the same day removed the build plan, interview notes and
+post drafts, which are personal notes rather than project documents.
+`commit_map.csv` maps IDs from both earlier histories to the current one.

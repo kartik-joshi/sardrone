@@ -275,5 +275,3 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 - [docs/DEVLOG.md](docs/DEVLOG.md): what broke and what was learned
 - [docs/results/](docs/results/): scorecard, closed-loop table, auto-labeller report, manifests
 - [docs/WORKFLOW.md](docs/WORKFLOW.md): the loop as a pipeline, and why it is not an Airflow DAG
-- [docs/TALKING_POINTS.md](docs/TALKING_POINTS.md): interview talking points
-- [docs/PLAN.md](docs/PLAN.md): the plan this was built from

@@ -6,15 +6,15 @@ intervals. Gap = simulated minus real: the smaller, the better the transfer.
 
 | Version | Change | Sim mAP@0.5 | Real mAP@0.5 | Gap | Sim P / R | Real P / R | Train images | Data hash | Commit |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| v0 | reference: COCO-pretrained YOLO11n, no training on our data | 0.453 (0.440 to 0.465) | 0.591 (0.574 to 0.607) | -0.138 (-0.159 to -0.117) | 0.65 / 0.45 | 0.83 / 0.51 | 0 | `none (no training)` | `0417fe7` |
-| v1 | baseline: simulation only | 0.947 (0.944 to 0.953) | 0.014 (0.009 to 0.019) | 0.933 (0.927 to 0.941) | 0.98 / 0.93 | 0.19 / 0.01 | 5999 | `d741bdbb19fbe45d` | `0417fe7` |
-| v2 | v1 recipe on domain-randomized worlds (ground, light, clothing, body size, clutter) | 0.934 (0.931 to 0.941) | 0.032 (0.029 to 0.038) | 0.902 (0.896 to 0.910) | 0.98 / 0.91 | 0.27 / 0.04 | 6000 | `61b514bcb1580625` | `60406b2` |
-| v3 | v1 + camera realism on training images (noise, blur, JPEG, exposure) | 0.941 (0.935 to 0.945) | 0.020 (0.017 to 0.023) | 0.921 (0.913 to 0.925) | 0.98 / 0.92 | 0.13 / 0.02 | 5999 | `86479461bb4f3bb7` | `e316ec6` |
-| v4 | v3 + 300 real images (5 %) from sard-train-pool | 0.934 (0.931 to 0.941) | 0.547 (0.529 to 0.570) | 0.387 (0.364 to 0.408) | 0.98 / 0.92 | 0.70 / 0.58 | 6299 | `7918bf71d200e0da` | `d734d95` |
-| v5 | v1 with the backbone frozen (only the detection head trains) | 0.943 (0.938 to 0.946) | 0.127 (0.119 to 0.138) | 0.816 (0.804 to 0.825) | 0.98 / 0.93 | 0.35 / 0.16 | 5999 | `d741bdbb19fbe45d` | `5d031ae` |
-| v6 | v4 with domain-randomized simulated frames (randomized + realism + 300 real) | 0.926 (0.921 to 0.931) | 0.597 (0.580 to 0.617) | 0.329 (0.307 to 0.346) | 0.96 / 0.88 | 0.51 / 0.70 | 6300 | `1acc17da393128c2` | `9dbfc8d` |
-| v7 | v6 recipe on randomized worlds with 1 to 3 parked vehicles each | 0.933 (0.928 to 0.938) | 0.498 (0.479 to 0.519) | 0.435 (0.414 to 0.454) | 0.98 / 0.89 | 0.59 / 0.61 | 6298 | `e411d1520339f4fb` | `b8b152f` |
-| v8 | v4 recipe on all 24,667 simulated training frames (not a 6,000 sample) | 0.946 (0.942 to 0.948) | 0.483 (0.465 to 0.507) | 0.462 (0.440 to 0.481) | 0.98 / 0.93 | 0.73 / 0.40 | 24967 | `c09b4aca41099b26` | `fad68c4` |
+| v0 | reference: COCO-pretrained YOLO11n, no training on our data | 0.453 (0.440 to 0.465) | 0.591 (0.574 to 0.607) | -0.138 (-0.159 to -0.117) | 0.65 / 0.45 | 0.83 / 0.51 | 0 | `none (no training)` | `8c45a3c` |
+| v1 | baseline: simulation only | 0.947 (0.944 to 0.953) | 0.014 (0.009 to 0.019) | 0.933 (0.927 to 0.941) | 0.98 / 0.93 | 0.19 / 0.01 | 5999 | `d741bdbb19fbe45d` | `8c45a3c` |
+| v2 | v1 recipe on domain-randomized worlds (ground, light, clothing, body size, clutter) | 0.934 (0.931 to 0.941) | 0.032 (0.029 to 0.038) | 0.902 (0.896 to 0.910) | 0.98 / 0.91 | 0.27 / 0.04 | 6000 | `61b514bcb1580625` | `6b78b87` |
+| v3 | v1 + camera realism on training images (noise, blur, JPEG, exposure) | 0.941 (0.935 to 0.945) | 0.020 (0.017 to 0.023) | 0.921 (0.913 to 0.925) | 0.98 / 0.92 | 0.13 / 0.02 | 5999 | `86479461bb4f3bb7` | `d3c4e34` |
+| v4 | v3 + 300 real images (5 %) from sard-train-pool | 0.934 (0.931 to 0.941) | 0.547 (0.529 to 0.570) | 0.387 (0.364 to 0.408) | 0.98 / 0.92 | 0.70 / 0.58 | 6299 | `7918bf71d200e0da` | `fe30b89` |
+| v5 | v1 with the backbone frozen (only the detection head trains) | 0.943 (0.938 to 0.946) | 0.127 (0.119 to 0.138) | 0.816 (0.804 to 0.825) | 0.98 / 0.93 | 0.35 / 0.16 | 5999 | `d741bdbb19fbe45d` | `5e48845` |
+| v6 | v4 with domain-randomized simulated frames (randomized + realism + 300 real) | 0.926 (0.921 to 0.931) | 0.597 (0.580 to 0.617) | 0.329 (0.307 to 0.346) | 0.96 / 0.88 | 0.51 / 0.70 | 6300 | `1acc17da393128c2` | `79de232` |
+| v7 | v6 recipe on randomized worlds with 1 to 3 parked vehicles each | 0.933 (0.928 to 0.938) | 0.498 (0.479 to 0.519) | 0.435 (0.414 to 0.454) | 0.98 / 0.89 | 0.59 / 0.61 | 6298 | `e411d1520339f4fb` | `d5b96e5` |
+| v8 | v4 recipe on all 24,667 simulated training frames (not a 6,000 sample) | 0.946 (0.942 to 0.948) | 0.483 (0.465 to 0.507) | 0.462 (0.440 to 0.481) | 0.98 / 0.93 | 0.73 / 0.40 | 24967 | `c09b4aca41099b26` | `af1a931` |
 
 Precision and recall are at the confidence cut-off chosen on the validation set
 (column `confidence` in the CSV), IoU 0.5.

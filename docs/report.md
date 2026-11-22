@@ -328,7 +328,7 @@ an already-reported spot is no longer reported again.
 
 ### The mission agent
 
-Source: `docs/results/agent_eval.md` and `agent_eval.json`, commit 3b11a4b.
+Source: `docs/results/agent_eval.md` and `agent_eval.json`, commit facb659.
 Twenty plain-English missions, each scored by checks fixed before any model
 ran (right areas in order, right altitude, exactly the right people
 reported, battery limit obeyed, every search finished, home at the end).

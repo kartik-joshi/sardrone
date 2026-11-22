@@ -19,3 +19,6 @@ data/overlays/
 .cache/
 data/real/
 data/closed_loop/
+
+# Personal notes and drafts, kept out of the public repo
+private/
