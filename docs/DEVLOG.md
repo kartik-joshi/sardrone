@@ -1433,6 +1433,6 @@ results was updated to its new ID, and `docs/results/commit_map.csv` maps
 each old ID to its new one, for commit messages and older files that
 still quote an old ID.
 
-A second rewrite the same day removed the build plan, interview notes and
-post drafts, which are personal notes rather than project documents.
+A second rewrite the same day removed personal notes and drafts that were
+never meant as project documents.
 `commit_map.csv` maps IDs from both earlier histories to the current one.
