@@ -249,19 +249,21 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 
 ## What's next
 
-v1.0 is complete; work continues. In rough order:
+v1.0 is complete; work continues. Each item is an issue in the
+[v2 milestone](https://github.com/kartik-joshi/sardrone/milestone/1):
 
-1. **Tiled detection:** run the detector on full-resolution tiles. On
-   HERIDAL people shrink to about 18 px at the model's input size.
-2. **Untangle v8:** all simulated frames with the real share held at 5 %,
-   over several seeds, to tell "more simulation" from "less real".
-3. **Protect more of the network** in simulation-only training (freeze the
-   neck too, or lower the learning rate).
+1. **Tiled detection** on full-resolution images: on HERIDAL people shrink
+   to about 18 px at the model's input size. ([#1](https://github.com/kartik-joshi/sardrone/issues/1))
+2. **Untangle v8:** more simulation, or a smaller real share? ([#2](https://github.com/kartik-joshi/sardrone/issues/2))
+3. **Protect more of the network** in simulation-only training. ([#3](https://github.com/kartik-joshi/sardrone/issues/3))
 4. **Richer simulated content:** real vehicle models, more body types,
-   vegetation and uneven terrain, since content is where the domains differ.
-5. **A better confirmation rule** for the low second pass.
-6. **The agent:** repeat runs to measure stability, try a newer model, and
-   connect it to the simulated flights instead of the mission simulator.
+   vegetation and uneven terrain. ([#4](https://github.com/kartik-joshi/sardrone/issues/4))
+5. **A better confirmation rule** for the low second pass. ([#5](https://github.com/kartik-joshi/sardrone/issues/5))
+6. **The agent:** repeat runs and a newer model ([#6](https://github.com/kartik-joshi/sardrone/issues/6)), a larger
+   mission set ([#7](https://github.com/kartik-joshi/sardrone/issues/7)), and flying the simulated drone from a
+   sentence ([#8](https://github.com/kartik-joshi/sardrone/issues/8)).
+7. **Real drone video,** not only still photos. ([#9](https://github.com/kartik-joshi/sardrone/issues/9))
+8. **The whole pipeline** end to end with one command. ([#10](https://github.com/kartik-joshi/sardrone/issues/10))
 
 Details in [docs/report.md](docs/report.md), section 7.
 
