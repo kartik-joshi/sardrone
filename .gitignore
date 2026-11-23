@@ -22,3 +22,10 @@ data/closed_loop/
 
 # Personal notes and drafts, kept out of the public repo
 private/
+
+# Editor swap and backup files (an .env swap file holds the API key)
+.env*
+!.env.example
+*.swp
+*.swo
+*~
