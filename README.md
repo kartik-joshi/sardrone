@@ -264,6 +264,12 @@ v1.0 is complete; work continues. Each item is an issue in the
    sentence ([#8](https://github.com/kartik-joshi/sardrone/issues/8)).
 7. **Real drone video,** not only still photos. ([#9](https://github.com/kartik-joshi/sardrone/issues/9))
 8. **The whole pipeline** end to end with one command. ([#10](https://github.com/kartik-joshi/sardrone/issues/10))
+9. **A FiftyOne plugin** that measures the sim-to-real gap on any pair of
+   datasets ([#11](https://github.com/kartik-joshi/sardrone/issues/11)), and **the simulated dataset on Hugging Face**
+   ([#12](https://github.com/kartik-joshi/sardrone/issues/12)).
+10. **Photo triage for search-and-rescue teams:** a prototype that ranks
+    drone photos by how likely they hold a person, built with the teams
+    who would use it. ([#13](https://github.com/kartik-joshi/sardrone/issues/13))
 
 Details in [docs/report.md](docs/report.md), section 7.
 
