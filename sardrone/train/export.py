@@ -74,13 +74,16 @@ def subsample_by_episode(view, count: int, seed: int = 51):
 
 
 def export_split(view, out_dir: Path, split: str, gt_field: str = "ground_truth", realism_seed: int | None = None,
-                 skip_realism=lambda path: False) -> list[tuple[str, str, str]]:  # fmt: skip
+                 skip_realism=lambda path: False, copy: int = 0) -> list[tuple[str, str, str]]:  # fmt: skip
     """Link images and write labels for one split.
     Returns [(relative image path, sha256 of the image, label text)].
 
     With `realism_seed`, images are not linked but written as degraded
     copies (see realism.py), except those for which `skip_realism(path)`
     is true (real photographs need no fake camera effects).
+
+    `copy` > 0 writes the same images again under names ending in `_r<copy>`,
+    so a small set can be repeated to raise its share of the training data.
     """
     images, labels = out_dir / "images" / split, out_dir / "labels" / split
     images.mkdir(parents=True, exist_ok=True)
@@ -89,6 +92,7 @@ def export_split(view, out_dir: Path, split: str, gt_field: str = "ground_truth"
     seen: set[str] = set()
     for filepath, detections in zip(view.values("filepath"), view.values(gt_field)):
         source = Path(filepath)
+        target = source.name if not copy else f"{source.stem}_r{copy}{source.suffix}"
         if source.name in seen:
             raise ValueError(f"two images named {source.name} in split {split!r}")
         seen.add(source.name)
@@ -96,14 +100,14 @@ def export_split(view, out_dir: Path, split: str, gt_field: str = "ground_truth"
             from sardrone.train.realism import degrade_file
 
             data, _ = degrade_file(source, source.name, realism_seed)
-            (images / source.name).write_bytes(data)
+            (images / target).write_bytes(data)
             digest = hashlib.sha256(data).hexdigest()
         else:
-            os.symlink(source, images / source.name)
+            os.symlink(source, images / target)
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
         text = label_text(detections)
-        (labels / f"{source.stem}.txt").write_text(text)
-        records.append((f"{split}/{source.name}", digest, text))
+        (labels / f"{Path(target).stem}.txt").write_text(text)
+        records.append((f"{split}/{target}", digest, text))
     return records
 
 
@@ -116,7 +120,8 @@ def export_hash(records: list[tuple[str, str, str]]) -> str:
 
 
 def export_dataset(splits: dict, out_dir: Path, name: str, view_names: dict | None = None, commit=("unknown", False),
-                   realism_seed: int | None = None, extra_train=None, notes: dict | None = None) -> dict:  # fmt: skip
+                   realism_seed: int | None = None, extra_train=None, notes: dict | None = None,
+                   extra_repeat: int = 1) -> dict:  # fmt: skip
     """Export several views. `splits` maps split name ("train", "val") to a view.
 
     Writes dataset.yaml (what Ultralytics reads) and export.json (the
@@ -125,7 +130,7 @@ def export_dataset(splits: dict, out_dir: Path, name: str, view_names: dict | No
     `realism_seed` degrades the TRAINING images only; validation images are
     left as rendered so that scores stay comparable between versions.
     `extra_train` is a second view (e.g. real photographs) added to the
-    training split as it is.
+    training split as it is, `extra_repeat` times (copies get new names).
     """
     out_dir = Path(out_dir)
     if out_dir.exists():
@@ -136,7 +141,8 @@ def export_dataset(splits: dict, out_dir: Path, name: str, view_names: dict | No
     for split, view in splits.items():
         part = export_split(view, out_dir, split, realism_seed=realism_seed if split == "train" else None)
         if split == "train" and extra_train is not None:
-            part += export_split(extra_train, out_dir, split)  # linked, never degraded
+            for copy in range(extra_repeat):  # linked, never degraded
+                part += export_split(extra_train, out_dir, split, copy=copy)
         records += part
         summary[split] = {
             "view": (view_names or {}).get(split, ""),
@@ -155,6 +161,7 @@ def export_dataset(splits: dict, out_dir: Path, name: str, view_names: dict | No
         "splits": summary,
         "realism_seed": realism_seed,
         "extra_train_images": len(extra_paths),
+        "extra_repeat": extra_repeat,
         "notes": notes or {},
         "commit": commit[0],
         "dirty": commit[1],
@@ -183,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=51)
     parser.add_argument("--realism", action="store_true", help="degrade training images like a real camera")
     parser.add_argument("--add-real", type=int, default=0, help="add this many images from sard-train-pool")
+    parser.add_argument("--real-repeat", type=int, default=1, help="include the added real images this many times")
     args = parser.parse_args(argv)
 
     dataset = fo.load_dataset(args.dataset)
@@ -205,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     manifest = export_dataset(
         views, args.out / args.name, args.name, names, git_commit(),
         realism_seed=args.seed if args.realism else None, extra_train=extra, notes=notes,
+        extra_repeat=args.real_repeat,
     )  # fmt: skip
     print(json.dumps(manifest, indent=2))
     print(f"wrote {args.out / args.name}")

@@ -229,6 +229,22 @@ def test_export_writes_links_labels_yaml_and_manifest(frames, tmp_path):
     assert json.loads((out / "export.json").read_text())["hash"] == manifest["hash"]
 
 
+def test_export_can_repeat_the_extra_real_images(frames, tmp_path):
+    views = {"train": frames.limit(2), "val": frames.skip(3)}
+    extra = frames.skip(2).limit(1)  # frame_2, standing in for a real photo
+    once = export.export_dataset(views, tmp_path / "once", "v", extra_train=extra)
+    four = export.export_dataset(views, tmp_path / "four", "v", extra_train=extra, extra_repeat=4)
+    assert once["splits"]["train"]["images"] == 3
+    assert four["splits"]["train"]["images"] == 2 + 4
+    assert four["extra_repeat"] == 4 and four["hash"] != once["hash"]
+    names = sorted(p.name for p in (tmp_path / "four" / "images" / "train").iterdir())
+    assert names == ["frame_0.jpg", "frame_1.jpg", "frame_2.jpg", "frame_2_r1.jpg", "frame_2_r2.jpg", "frame_2_r3.jpg"]
+    label = (tmp_path / "four" / "labels" / "train" / "frame_2.txt").read_text()
+    assert all((tmp_path / "four" / "labels" / "train" / f"frame_2_r{k}.txt").read_text() == label for k in (1, 2, 3))
+    # The default (one copy) is unchanged from before.
+    assert export.export_dataset(views, tmp_path / "again", "v", extra_train=extra)["hash"] == once["hash"]
+
+
 def test_export_hash_identifies_the_data(frames, tmp_path):
     views = {"train": frames.limit(3), "val": frames.skip(3)}
     first = export.export_dataset(views, tmp_path / "a", "v")["hash"]

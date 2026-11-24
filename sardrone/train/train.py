@@ -47,6 +47,11 @@ class TrainConfig:
     # (Ultralytics: an int n freezes model.0 ... model.n-1; checked in
     # engine/trainer.py of 8.4.214.)
     freeze: int | None = None
+    # Optimizer and starting learning rate. "auto" lets Ultralytics choose; for
+    # these runs it picked AdamW at lr 0.002 and IGNORED lr0 (engine/trainer.py
+    # build_optimizer, 8.4.214). To set a learning rate, name the optimizer too.
+    optimizer: str = "auto"
+    lr0: float = 0.01
     # Augmentation. Ultralytics' defaults, written out so a run's record is
     # complete and so later versions can change exactly one of them.
     mosaic: float = 1.0
@@ -129,10 +134,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int)
     parser.add_argument("--seed", type=int, help="training seed (default 51); other seeds measure run-to-run variation")
     parser.add_argument("--freeze", type=int, help="freeze the first N modules (11 = the whole backbone)")
+    parser.add_argument("--optimizer", help="e.g. AdamW; 'auto' (default) ignores --lr0")
+    parser.add_argument("--lr0", type=float, help="starting learning rate (needs --optimizer)")
     args = parser.parse_args(argv)
 
     config = TrainConfig()
-    for key in ("epochs", "imgsz", "batch", "device", "workers", "freeze", "seed"):
+    for key in ("epochs", "imgsz", "batch", "device", "workers", "freeze", "seed", "optimizer", "lr0"):
         if getattr(args, key) is not None:
             setattr(config, key, getattr(args, key))
     record = train(DEFAULT_EXPORT_ROOT / args.export, args.version, config, commit=git_commit())
