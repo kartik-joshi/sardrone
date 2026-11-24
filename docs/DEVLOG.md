@@ -1436,3 +1436,42 @@ still quote an old ID.
 A second rewrite the same day removed personal notes and drafts that were
 never meant as project documents.
 `commit_map.csv` maps IDs from both earlier histories to the current one.
+
+## Tiled detection, issue #1 (2026-11-23)
+
+People in HERIDAL's 4000 px photos shrink to about 18 px at the model's
+1280 px input. `sardrone/train/tiled.py` also runs the model on 1280 px
+tiles at full resolution.
+
+- Method fixed before any full run: 1280 px tiles overlapping by 256 px
+  (the median person is 56 px, so each is whole in some tile), plus the
+  whole image at 1280 as before; boxes touching an inner cut line dropped;
+  NMS at IoU 0.5; top 300. Person boxes only. Each model keeps its
+  scorecard cut-off; nothing tuned on the test sets.
+- Two bugs caught before the runs, both now covered by tests: the
+  untrained COCO model's cars and dogs would have been labelled "person",
+  and I had imported a commit helper that did not exist under that name.
+- A smoke test on 3 HERIDAL photos looked worse for tiling (0.55 against
+  0.64). Three images say nothing; the full runs decide.
+- Full runs: six models, HERIDAL and SARD, predictions at 5e564cd. The SARD
+  rows record `dirty: true` only because the HERIDAL half had just written
+  `tiled.csv`; the code was unchanged.
+- Overlapping intervals cannot settle a comparison on the same images, so
+  `metrics.paired_difference` resamples the same images for both methods.
+
+| | HERIDAL gain (paired 95 %) | SARD gain (paired 95 %) |
+| --- | --- | --- |
+| v0 | +0.126 (+0.075 to +0.179) | +0.076 (+0.069 to +0.083) |
+| v1 | +0.051 (+0.025 to +0.085) | +0.001 (-0.002 to +0.007) |
+| v4 | +0.120 (+0.067 to +0.175) | +0.024 (+0.013 to +0.034) |
+| v6 | +0.102 (+0.047 to +0.161) | -0.006 (-0.016 to +0.005) |
+| v7 | +0.141 (+0.083 to +0.205) | +0.043 (+0.033 to +0.053) |
+| v8 | +0.086 (+0.036 to +0.136) | +0.030 (+0.021 to +0.038) |
+
+- Best real-photo scores in the project so far: 0.364 on HERIDAL (v6,
+  tiled) and 0.666 on SARD (untrained v0, tiled).
+- What it does not change: on SARD the untrained model is still the best,
+  tiled or not.
+- The cost: more confident false alarms at the old cut-offs (v6 on
+  HERIDAL, precision 0.31 to 0.10). For a photo-triage tool that means
+  more photos to look at; a tiled cut-off is the next step.

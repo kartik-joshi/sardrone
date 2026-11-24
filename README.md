@@ -91,6 +91,18 @@ are the same habit: having reported exactly the right people, it flew home
 before finishing the search, which the scorer counts as a failure.
 [docs/results/agent_eval.md](docs/results/agent_eval.md)
 
+**6. Looking at photos at full resolution finds far more people.** The
+detector shrinks every photo to 1280 px; in a 4000 px HERIDAL photo a person
+becomes about 18 px. Running it on overlapping 1280 px tiles as well
+(method fixed before scoring) raised every model on HERIDAL, each gain with
+a paired interval above zero: +0.09 to +0.14 mAP@0.5 for all but the
+simulation-only v1 (+0.05). v6 went from 0.262 to
+0.364, the untrained v0 from 0.184 to 0.310. On SARD's smaller photos the
+gains are smaller (v0 0.591 to 0.666, v4 +0.024) and v6 does not change.
+The catch: at each model's existing cut-off, tiling also raises more false
+alarms; a cut-off for tiled use has not been chosen.
+[docs/results/tiled.md](docs/results/tiled.md)
+
 ## How it fits together
 
 ```
@@ -252,8 +264,9 @@ PX4's own clock, battery reported on a 0 to 100 scale.
 v1.0 is complete; work continues. Each item is an issue in the
 [v2 milestone](https://github.com/kartik-joshi/sardrone/milestone/1):
 
-1. **Tiled detection** on full-resolution images: on HERIDAL people shrink
-   to about 18 px at the model's input size. ([#1](https://github.com/kartik-joshi/sardrone/issues/1))
+1. ~~**Tiled detection** on full-resolution images.~~ Done: up to +0.14
+   mAP@0.5 on HERIDAL (finding 6). Next: a cut-off chosen for tiled use.
+   ([#1](https://github.com/kartik-joshi/sardrone/issues/1))
 2. **Untangle v8:** more simulation, or a smaller real share? ([#2](https://github.com/kartik-joshi/sardrone/issues/2))
 3. **Protect more of the network** in simulation-only training. ([#3](https://github.com/kartik-joshi/sardrone/issues/3))
 4. **Richer simulated content:** real vehicle models, more body types,

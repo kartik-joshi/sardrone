@@ -220,6 +220,26 @@ the same 300 real images were 4.8 % of v4's training set and 1.2 % of
 v8's, so a smaller real share explains the result as well as more
 simulation does.
 
+**Finding 9. Full-resolution tiles help every useful model on HERIDAL.**
+Source: `docs/results/tiled.md`. The method was fixed before scoring: 1280
+px tiles overlapping by 256 px, plus the whole image as before, boxes on
+inner cut lines dropped, NMS at IoU 0.5. Gains in mAP@0.5 with 95 % paired
+bootstrap intervals (the same images resampled for both methods):
+
+| Model | HERIDAL full / tiled | Gain | SARD full / tiled | Gain |
+| --- | --- | --- | --- | --- |
+| v0 untrained | 0.184 / 0.310 | +0.126 (+0.075 to +0.179) | 0.591 / 0.666 | +0.076 (+0.069 to +0.083) |
+| v4 | 0.231 / 0.352 | +0.120 (+0.067 to +0.175) | 0.547 / 0.572 | +0.024 (+0.013 to +0.034) |
+| v6 | 0.262 / 0.364 | +0.102 (+0.047 to +0.161) | 0.597 / 0.591 | -0.006 (-0.016 to +0.005) |
+| v8 | 0.261 / 0.345 | +0.086 (+0.036 to +0.136) | 0.483 / 0.514 | +0.030 (+0.021 to +0.038) |
+
+The gain is largest where people are smallest (HERIDAL, 4000 px photos) and
+smaller on SARD (1920 px). It does not change the training story: on SARD
+the untrained v0, tiled, is still the best model (0.666). Tiling also
+raises more confident false alarms: at the scorecard cut-offs, chosen for
+untiled use, v6's precision on HERIDAL falls from 0.31 to 0.10. A cut-off
+for tiled use would have to be chosen on validation data; it has not been.
+
 ### Precision-recall curves
 
 Source: `docs/images/pr_curves.png`, from the stored predictions. On real
@@ -438,8 +458,9 @@ mission is unaffected because identity is decided from ground position.
 1. Separate the two causes in v8: train on all simulated frames with the
    real share held up, by using all 594 SARD pool images or repeating the
    300 to make 5 %, over several seeds.
-2. Run the detector on full-resolution tiles: on HERIDAL the people
-   shrink to about 18 px at the model's input size.
+2. Choose a confidence cut-off for tiled detection on validation data:
+   tiling finds more people but, at the untiled cut-offs, raises more
+   false alarms (Finding 9).
 3. Protect the head as well as the backbone: a lower learning rate, or
    freezing the neck, in simulation-only training.
 4. Widen the simulated content (more bodies, vegetation, terrain) before
