@@ -6,6 +6,8 @@
 "assistant" / "tool"), so the Cohere back-end passes it through unchanged.
 
 * CohereModel     the real thing (needs COHERE_API_KEY; calls cost money)
+* OllamaModel     a local model served by Ollama (free, offline; the model
+                  must support tool calls)
 * RuleBasedModel  no language model at all: keyword rules. A baseline that
                   shows which missions are easy and gives the evaluation
                   something to measure before any API call is made.
@@ -140,6 +142,93 @@ class CohereModel:
             calls, text or (message.tool_plan or ""),
             int(tokens.input_tokens or 0) if tokens else 0, int(tokens.output_tokens or 0) if tokens else 0,
         )  # fmt: skip
+
+
+class OllamaModel:
+    """A local model through Ollama's HTTP chat API (`POST /api/chat`), no SDK.
+
+    Checked against the installed Ollama 0.40.14 server: `/api/version`
+    answers, and `/api/chat` takes `model`, `messages`, `tools`, `stream` and
+    `options`; a model without tool support is refused with an error
+    ("... does not support tools"), which this class raises as is. Per
+    Ollama's API docs, a reply has `message.content`, `message.tool_calls`
+    (each with `function.name` and `function.arguments` as an object, not a
+    JSON string, and no id), `prompt_eval_count` and `eval_count`. That reply
+    shape is not yet checked against a real tool-capable model here.
+
+    The agent's messages use the Cohere v2 format; they are translated: an
+    assistant turn's tool calls get their arguments decoded, and a tool
+    result carries `tool_name` (Ollama has no call ids).
+    """
+
+    def __init__(self, model: str | None = None, host: str | None = None, temperature: float = 0.0,
+                 seed: int = 51, timeout_s: float = 300.0, post=None):  # fmt: skip
+        load_env_file()
+        self.model = model or os.environ.get("OLLAMA_MODEL")
+        if not self.model:
+            raise RuntimeError("no Ollama model named: pass --ollama-model or set OLLAMA_MODEL in .env")
+        self.host = (host or os.environ.get("OLLAMA_HOST") or "http://localhost:11434").rstrip("/")
+        if not self.host.startswith("http"):
+            self.host = "http://" + self.host
+        self.name = f"ollama:{self.model}"
+        self.temperature, self.seed, self.timeout_s = temperature, seed, timeout_s
+        self._post = post or self._http_post  # tests pass a fake
+        self.calls = 0
+
+    def _http_post(self, path: str, body: dict) -> dict:
+        import urllib.error
+        import urllib.request
+
+        request = urllib.request.Request(self.host + path, data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json"})  # fmt: skip
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_s) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as error:  # Ollama puts the reason in a JSON body
+            try:
+                detail = json.loads(error.read()).get("error", "")
+            except ValueError:
+                detail = ""
+            raise RuntimeError(f"Ollama refused the request: {detail or error}") from error
+
+    @staticmethod
+    def to_ollama(messages: list[dict]) -> list[dict]:
+        """Cohere v2 chat messages -> Ollama chat messages."""
+        out, names = [], {}
+        for m in messages:
+            if m["role"] == "assistant" and m.get("tool_calls"):
+                calls = []
+                for c in m["tool_calls"]:
+                    names[c["id"]] = c["function"]["name"]
+                    arguments = c["function"]["arguments"]
+                    calls.append({"function": {"name": c["function"]["name"],
+                                               "arguments": json.loads(arguments) if isinstance(arguments, str) else arguments}})  # fmt: skip
+                out.append({"role": "assistant", "content": m.get("tool_plan") or "", "tool_calls": calls})
+            elif m["role"] == "tool":
+                out.append({"role": "tool", "content": m["content"], "tool_name": names.get(m.get("tool_call_id"), "")})
+            else:
+                out.append({"role": m["role"], "content": m.get("content", "")})
+        return out
+
+    def reply(self, messages: list[dict], tools: list[dict]) -> Reply:
+        self.calls += 1
+        response = self._post("/api/chat", {
+            "model": self.model, "stream": False, "messages": self.to_ollama(messages),
+            "tools": [{"type": "function", "function": tool} for tool in tools],
+            "options": {"temperature": self.temperature, "seed": self.seed},
+        })  # fmt: skip
+        if response.get("error"):
+            raise RuntimeError(f"Ollama: {response['error']}")
+        message = response.get("message") or {}
+        calls = []
+        for k, call in enumerate(message.get("tool_calls") or []):
+            function = call.get("function") or {}
+            arguments = function.get("arguments") or {}
+            if isinstance(arguments, str):  # some models send a JSON string anyway
+                arguments = json.loads(arguments or "{}")
+            calls.append(ToolCall(call.get("id") or f"call_{self.calls}_{k}", function.get("name", ""), arguments))
+        return Reply(tuple(calls), message.get("content") or "",
+                     int(response.get("prompt_eval_count") or 0), int(response.get("eval_count") or 0))  # fmt: skip
 
 
 COLOURS = ("red", "orange", "yellow", "green", "blue", "purple", "pink", "white", "black", "grey", "brown")

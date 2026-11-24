@@ -817,7 +817,7 @@ def safe_confirm_altitude(spec: dict, wanted_m: float, margin_m: float = 3.0) ->
     """Never circle lower than the tallest tree plus a margin."""
     from sardrone.worlds.assets import TREES
 
-    tallest = max((TREES[t["kind"]].hi[2] * t["scale"] for t in spec["trees"]), default=0.0)
+    tallest = max((TREES[t["kind"]].hi[2] * t["scale"] for t in spec.get("trees", [])), default=0.0)
     return min(spec["altitude_m"], max(wanted_m, math.ceil(tallest + margin_m)))
 
 
@@ -858,6 +858,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.strict_second_pass:
             config.second_pass_track_min_hits, config.second_pass_confirm_min_frames = 6, 20
         config.second_pass_min_confidence = args.second_pass_confidence
+    from sardrone.mission.clearance import require_clearance
+
+    require_clearance(spec, {"search": config.altitude_m, "second pass": config.second_pass_altitude_m,
+                             "confirm": config.confirm_altitude_m})  # refuse before takeoff  # fmt: skip
     ground_z = -spec["drone_body_height_m"]
     meta = EpisodeMeta(
         world=spec["world"], weather=spec["weather"], time_of_day=spec["time_of_day"],

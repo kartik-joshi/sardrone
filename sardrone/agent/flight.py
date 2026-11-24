@@ -50,6 +50,7 @@ from sardrone.mission.search import (
     SearchConfig,
     SearchRecorder,
     bearing_deg,
+    safe_confirm_altitude,
 )
 from sardrone.sim.camera import pinhole_intrinsics
 
@@ -276,8 +277,10 @@ class FlightBackend:
     """The six tools on a real (simulated) flight, with the mission simulator's
     interface: sync calls, dict results, `log`, `errors`, `battery`, `state`."""
 
-    def __init__(self, recorder: AgentSearch, loop: asyncio.AbstractEventLoop, timeout_s: float = 900.0):
+    def __init__(self, recorder: AgentSearch, loop: asyncio.AbstractEventLoop, timeout_s: float = 900.0,
+                 lowest_safe_altitude_m: float = 0.0):  # fmt: skip
         self.recorder, self.loop, self.timeout_s = recorder, loop, timeout_s
+        self.lowest_safe_altitude_m = lowest_safe_altitude_m  # tallest object + margin: no obstacle avoidance
         self.log, self.errors = [], 0
         self.area: str | None = None
         self.state = "IDLE"  # IDLE | SEARCHING | SEARCH_COMPLETE | HOME
@@ -326,6 +329,11 @@ class FlightBackend:
             return self._result("start_search", arguments, False, error=f"altitude must be one of {list(ALTITUDES_M)}")
         if self.state == "SEARCHING":
             return self._result("start_search", arguments, False, error="already searching")
+        if altitude_m < self.lowest_safe_altitude_m:
+            safe = [a for a in ALTITUDES_M if a >= self.lowest_safe_altitude_m]
+            return self._result("start_search", arguments, False,
+                                error=f"{altitude_m} m is too low for this area: the tallest object needs "
+                                      f"at least {self.lowest_safe_altitude_m:.1f} m; choose one of {safe}")  # fmt: skip
         self._run(self.recorder.start(self.area, altitude_m))
         self.state = "SEARCHING"
         return self._result("start_search", arguments, True, state=self.state, battery_percent=self.battery)
@@ -389,7 +397,12 @@ def fly_mission(model, prompt: str, *, drone, camera, detector, truth, spec, pat
     from sardrone.agent.agent import run_agent
     from sardrone.mcap.episode_writer import EpisodeWriter
 
+    from sardrone.mission.clearance import lowest_safe_altitude_m, require_clearance
+
     config = SearchConfig(altitude_m=spec["altitude_m"])
+    # Same rule as a scripted search: never circle lower than the trees allow.
+    config.confirm_altitude_m = safe_confirm_altitude(spec, config.confirm_altitude_m)
+    require_clearance(spec, {"confirm": config.confirm_altitude_m})
     loop = asyncio.new_event_loop()
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
@@ -404,7 +417,7 @@ def fly_mission(model, prompt: str, *, drone, camera, detector, truth, spec, pat
                                    detector=detector, config=config, truth=truth, ground_z=-spec["drone_body_height_m"],
                                    sleep=sleep, side_m=spec["area_m"])  # fmt: skip
             run(recorder.prepare())
-            backend = FlightBackend(recorder, loop)
+            backend = FlightBackend(recorder, loop, lowest_safe_altitude_m=lowest_safe_altitude_m(spec))
             episode.log_event(recorder.now_ns, EVENT_AGENT, f"mission: {prompt}")
 
             def on_decision(text: str) -> None:
@@ -447,8 +460,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Let the mission agent fly the simulated drone.")
     parser.add_argument("--world-dir", type=Path, required=True)
     parser.add_argument("--prompt", required=True)
-    parser.add_argument("--model", default="rule-based", choices=["rule-based", "cohere"])
+    parser.add_argument("--model", default="rule-based", choices=["rule-based", "cohere", "ollama"])
     parser.add_argument("--cohere-model")
+    parser.add_argument("--ollama-model", help="local Ollama model with tool support")
     parser.add_argument("--detector", default="oracle", help="'oracle' or a model version, e.g. v4")
     parser.add_argument("--url", default="udpin://0.0.0.0:14540")
     parser.add_argument("--fake", action="store_true", help="FakeDrone and generated images, no simulator")
@@ -510,7 +524,7 @@ def _fly(args) -> int:
                                 name=f"yolo:{args.detector}")  # fmt: skip
     started = time.monotonic()
     try:
-        summary = fly_mission(make_model(args.model, args.cohere_model), args.prompt, drone=drone, camera=camera,
+        summary = fly_mission(make_model(args.model, args.cohere_model, args.ollama_model), args.prompt, drone=drone, camera=camera,
                               detector=detector, truth=truth, spec=spec, path=path, meta=meta, sleep=sleep,
                               max_steps=args.max_steps, extra={**extra, "detector": args.detector})  # fmt: skip
     finally:

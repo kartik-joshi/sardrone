@@ -317,3 +317,62 @@ def test_a_failed_mission_is_recorded_as_failed(tmp_path):
     sidecar = json.loads(path.with_suffix(".json").read_text())
     assert sidecar["success"] is False
     assert sidecar["agent_checks"]["reported_exactly_the_right_people"] is False
+
+
+# ---- the local Ollama back-end (issue #16), with a fake server -------------------
+
+
+def test_ollama_translates_messages_and_reads_tool_calls():
+    from sardrone.agent.models import OllamaModel
+
+    sent = {}
+
+    def fake_post(path, body):
+        sent["path"], sent["body"] = path, body
+        return {"message": {"role": "assistant", "content": "",
+                            "tool_calls": [{"function": {"name": "start_search", "arguments": {"altitude_m": 25}}}]},
+                "prompt_eval_count": 120, "eval_count": 9}  # fmt: skip
+
+    model = OllamaModel("qwen-test", post=fake_post)
+    history = [
+        {"role": "system", "content": "you fly a drone"},
+        {"role": "user", "content": "search the north field"},
+        {"role": "assistant", "tool_plan": "set the area", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "set_search_area", "arguments": '{"area": "north field"}'}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": '{"ok": true}'},
+    ]  # fmt: skip
+    reply = model.reply(history, [{"name": "start_search", "description": "d", "parameters": {"type": "object"}}])
+    assert sent["path"] == "/api/chat" and sent["body"]["stream"] is False and sent["body"]["model"] == "qwen-test"
+    assert sent["body"]["options"] == {"temperature": 0.0, "seed": 51}
+    messages = sent["body"]["messages"]
+    assert messages[2]["tool_calls"][0]["function"]["arguments"] == {"area": "north field"}  # decoded, not a string
+    assert messages[3] == {"role": "tool", "content": '{"ok": true}', "tool_name": "set_search_area"}
+    assert sent["body"]["tools"][0]["type"] == "function"
+    assert reply.tool_calls[0].name == "start_search" and reply.tool_calls[0].arguments == {"altitude_m": 25}
+    assert reply.tool_calls[0].id and (reply.input_tokens, reply.output_tokens) == (120, 9)
+    assert model.name == "ollama:qwen-test"
+
+
+def test_ollama_errors_are_raised_not_hidden():
+    from sardrone.agent.models import OllamaModel
+
+    model = OllamaModel("gemma3:12b", post=lambda path, body: {"error": "gemma3:12b does not support tools"})
+    with pytest.raises(RuntimeError, match="does not support tools"):
+        model.reply([{"role": "user", "content": "hi"}], [])
+
+
+def test_ollama_runs_the_agent_loop_end_to_end():
+    from sardrone.agent.agent import run_agent
+    from sardrone.agent.models import OllamaModel
+    from sardrone.agent.sim import MissionSim
+
+    script = iter([("set_search_area", {"area": "north field"}), ("start_search", {"altitude_m": 25}),
+                   ("return_home", {})])  # fmt: skip
+
+    def fake_post(path, body):
+        step = next(script, None)
+        calls = [{"function": {"name": step[0], "arguments": step[1]}}] if step else []
+        return {"message": {"content": "" if step else "done", "tool_calls": calls}}
+
+    transcript = run_agent(OllamaModel("fake", post=fake_post), "search the north field", MissionSim(Scenario(people=())), max_steps=10)
+    assert [s.tool for s in transcript.steps][:3] == ["set_search_area", "start_search", "return_home"]

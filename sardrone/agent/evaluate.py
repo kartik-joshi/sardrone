@@ -184,20 +184,26 @@ def write_report(summaries: list[dict], results_by_model: dict, out_dir: Path = 
     )
 
 
-def make_model(name: str, cohere_model: str | None = None) -> ChatModel:
+def make_model(name: str, cohere_model: str | None = None, ollama_model: str | None = None) -> ChatModel:
     if name == "rule-based":
         return RuleBasedModel()
     if name == "cohere":
         from sardrone.agent.models import CohereModel
 
         return CohereModel(cohere_model)
+    if name == "ollama":
+        from sardrone.agent.models import OllamaModel
+
+        return OllamaModel(ollama_model)
     raise ValueError(f"unknown model {name!r}")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluate the mission agent on the written missions.")
-    parser.add_argument("--model", action="append", choices=["rule-based", "cohere"], help="may be given twice")
+    parser.add_argument("--model", action="append", choices=["rule-based", "cohere", "ollama"],
+                        help="may be given more than once")  # fmt: skip
     parser.add_argument("--cohere-model", help="Cohere model name (or set COHERE_MODEL in .env)")
+    parser.add_argument("--ollama-model", help="local Ollama model with tool support (or set OLLAMA_MODEL in .env)")
     parser.add_argument("--price-in", type=float, help="USD per million input tokens")
     parser.add_argument("--price-out", type=float, help="USD per million output tokens")
     parser.add_argument("--missions", type=Path, default=MISSIONS, help="mission file (default: the original 20)")
@@ -207,8 +213,8 @@ def main(argv: list[str] | None = None) -> int:
     missions = load_missions(args.missions)
     summaries, results_by_model = [], {}
     for name in args.model or ["rule-based"]:
-        model = make_model(name, args.cohere_model)
-        results = [run_mission(make_model(name, args.cohere_model) if name == "rule-based" else model, m) for m in missions]
+        model = make_model(name, args.cohere_model, args.ollama_model)
+        results = [run_mission(make_model(name) if name == "rule-based" else model, m) for m in missions]
         priced = (args.price_in, args.price_out) if name == "cohere" else (None, None)
         summaries.append(summarise(model.name, results, *priced))
         results_by_model[model.name] = results
