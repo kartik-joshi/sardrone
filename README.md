@@ -286,9 +286,11 @@ v1.0 is complete; work continues. Each item is an issue in the
 4. **Richer simulated content:** real vehicle models, more body types,
    vegetation and uneven terrain. ([#4](https://github.com/kartik-joshi/sardrone/issues/4))
 5. **A better confirmation rule** for the low second pass. ([#5](https://github.com/kartik-joshi/sardrone/issues/5))
-6. **The agent:** repeat runs and a newer model ([#6](https://github.com/kartik-joshi/sardrone/issues/6)), a larger
-   mission set ([#7](https://github.com/kartik-joshi/sardrone/issues/7)), and flying the simulated drone from a
-   sentence ([#8](https://github.com/kartik-joshi/sardrone/issues/8)).
+6. **The agent:** 12 harder missions are written and scored for keyword
+   rules (1 of 12); repeat runs, the newer model and model scores on the
+   new set wait for the Cohere key's monthly limit to reset ([#6](https://github.com/kartik-joshi/sardrone/issues/6),
+   [#7](https://github.com/kartik-joshi/sardrone/issues/7)). Flying the simulated drone from a sentence ([#8](https://github.com/kartik-joshi/sardrone/issues/8)) is
+   built and being flown.
 7. **Real drone video,** not only still photos. ([#9](https://github.com/kartik-joshi/sardrone/issues/9))
 8. **The whole pipeline** end to end with one command. ([#10](https://github.com/kartik-joshi/sardrone/issues/10))
 9. ~~**A FiftyOne plugin**~~ Done: [plugins/sim2real_gap](plugins/sim2real_gap)

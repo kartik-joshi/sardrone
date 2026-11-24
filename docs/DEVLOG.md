@@ -1516,3 +1516,24 @@ cut-off chosen on the same real photos.
 
 Also: rebuilding v1's training export from its recorded settings reproduced
 its hash, d741bdbb19fbe45d, exactly.
+
+## Agent: twelve harder missions; the Cohere trial limit (2026-11-23)
+
+- `sardrone/agent/missions_hard.yaml`: 12 new missions, written after the
+  first 20 were scored and fixed before any model ran: a correction
+  ("actually, make that the west woods"), two conditionals (one where the
+  person is found in the first area, so no second search is needed),
+  typos, numbers in words, "as low as you're allowed", an exclusion
+  ("not the person in the orange vest"), standing by without launching,
+  and a battery limit that cuts a two-area search short. Same checks; the
+  reference policy passes all 12, so each is solvable.
+- Keyword rules: 1 of 12 (`docs/results/agent_eval_hard.md`), against 9 of
+  20 on the first set. The new set does what it was written for.
+- No model scores yet. The planned run (command-a-03 on all 32 missions,
+  command-a-plus-05-2026 on the first 20, about 550 calls) stopped on its
+  first call: the trial key's monthly limit of 1,000 calls was already
+  used. My estimate that about 400 had been used was wrong. The scores
+  wait for the limit to reset.
+- The retry logic treated that 429 like the per-minute limit and retried
+  for about 7 minutes. Now a monthly-limit 429 stops at once with a clear
+  error (tested).
