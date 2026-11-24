@@ -81,3 +81,9 @@ def test_export_options_pass_through_to_the_export_stage():
     export = dict((name, command) for name, command, _ in plan)["export"]
     assert export == ["py", "-m", "sardrone.train.export", "--name", "v13-6k", "--max-train", "6000",
                       "--train", "train-v13-rich", "--realism", "--add-real", "300"]  # fmt: skip
+
+
+def test_training_options_pass_through_to_the_train_stage():
+    plan = pipeline.stages("v13", "v13-6k", "x", None, python="py", train_args=["--epochs", "10"])
+    train = dict((name, command) for name, command, _ in plan)["train"]
+    assert train[-2:] == ["--epochs", "10"]

@@ -79,7 +79,8 @@ def write_state(hard_cases: int, version: str, path: Path = STATE_FILE) -> dict:
 
 
 def stages(version: str, export: str, change: str, max_train: int | None, python: str = sys.executable,
-           export_args: list[str] | None = None) -> list[tuple[str, list[str], bool]]:  # fmt: skip
+           export_args: list[str] | None = None,
+           train_args: list[str] | None = None) -> list[tuple[str, list[str], bool]]:  # fmt: skip
     """(name, command, runs only if the gate says retrain). `export_args` are
     passed to the export unchanged (e.g. --train, --realism, --add-real)."""
     export_command = [python, "-m", "sardrone.train.export", "--name", export]
@@ -90,7 +91,8 @@ def stages(version: str, export: str, change: str, max_train: int | None, python
         ("ingest", [python, "-m", "sardrone.fo.frames"], False),
         ("curate", [python, "-m", "sardrone.fo.curate"], False),
         ("export", export_command, True),
-        ("train", [python, "-m", "sardrone.train.train", "--export", export, "--version", version], True),
+        ("train", [python, "-m", "sardrone.train.train", "--export", export, "--version", version,
+                   *(train_args or [])], True),
         ("evaluate", [python, "-m", "sardrone.train.evaluate", "--version", version, "--change", change], True),
     ]
 
@@ -108,13 +110,13 @@ def count_hard_cases() -> int:
 
 def run_pipeline(version: str, export: str, change: str, *, execute: bool, max_train: int | None = None,
                  state_path: Path = STATE_FILE, run=subprocess.run, count=count_hard_cases, log=print,
-                 export_args: list[str] | None = None) -> GateDecision:  # fmt: skip
+                 export_args: list[str] | None = None, train_args: list[str] | None = None) -> GateDecision:  # fmt: skip
     """Run the data stages, ask the gate, then (maybe) the training stages.
 
     With `execute=False` nothing is run: the plan and the gate's decision
     from the data as it is now are printed.
     """
-    plan = stages(version, export, change, max_train, export_args=export_args)
+    plan = stages(version, export, change, max_train, export_args=export_args, train_args=train_args)
     for name, command, gated in plan:
         if gated:
             continue
@@ -149,6 +151,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run", action="store_true", help="really run (default: dry run)")
     parser.add_argument("--export-arg", action="append", default=[], dest="export_args",
                         help="passed to the export unchanged; repeat, e.g. --export-arg=--realism")  # fmt: skip
+    parser.add_argument("--train-arg", action="append", default=[], dest="train_args",
+                        help="passed to training unchanged; e.g. --train-arg=--epochs --train-arg=10 (the "
+                             "scorecard's runs use 10; the code default is 50)")  # fmt: skip
     parser.add_argument("--record-current", action="store_true",
                         help="record today's hard-case count as the state of an existing model, without training")  # fmt: skip
     args = parser.parse_args(argv)
@@ -156,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(write_state(count_hard_cases(), args.version), indent=2))
         return 0
     run_pipeline(args.version, args.export or args.version, args.change, execute=args.run, max_train=args.max_train,
-                 export_args=args.export_args)
+                 export_args=args.export_args, train_args=args.train_args)
     return 0
 
 
