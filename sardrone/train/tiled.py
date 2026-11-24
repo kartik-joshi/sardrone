@@ -207,11 +207,25 @@ def gains(datasets: list[str], versions: list[str], repeats: int = 1000, path: P
                 "commit": commit, "dirty": dirty, "evaluated_utc": stamp,
             })  # fmt: skip
             print(json.dumps(rows[-1]), flush=True)
-    with open(path, "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=GAIN_FIELDS)
-        writer.writeheader()
-        writer.writerows(rows)
+    merge_rows(path, rows, GAIN_FIELDS)
     return rows
+
+
+def merge_rows(path: Path, rows: list[dict], fields: list[str]) -> None:
+    """Write `rows` into the CSV, replacing rows with the same (dataset,
+    version) and keeping all others. (An earlier version rewrote the file
+    and dropped the other datasets' rows.)"""
+    keys = {(r["dataset"], r["version"]) for r in rows}
+    kept = []
+    if path.exists():
+        with open(path, newline="") as handle:
+            kept = [r for r in csv.DictReader(handle) if (r["dataset"], r["version"]) not in keys]
+    merged = kept + [{k: str(v) for k, v in r.items()} for r in rows]
+    merged.sort(key=lambda r: (r["dataset"], r["version"]))
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(merged)
 
 
 CUTOFF_CSV = env.PROJECT_ROOT / "docs" / "results" / "tiled_cutoffs.csv"

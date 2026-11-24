@@ -266,6 +266,26 @@ all, it scores level with v6, which trained on 300 real SARD photos
 run, overlapping intervals: a direction to test with seeds and with real
 images added, not yet a result to rely on.
 
+**Finding 11. A third real dataset, and thermal.** WiSARD's one-flight sample
+(University of Washington; source and licence in the README): 264 colour
+images at 3840 x 2160 with 1,022 people, and 264 thermal images at 640 x 512
+with 1,006, in flight order. Test only. Sources: `extra_real.csv`,
+`tiled.csv`, `tiled_gain.csv` (commit 820e17e; gains with a paired bootstrap).
+
+| Model | Colour, untiled | Colour, tiled | Tiling gain | Thermal, untiled |
+| --- | --- | --- | --- | --- |
+| v0 untrained | 0.125 | 0.314 | +0.190 (+0.153 to +0.225) | 0.150 |
+| v4 (300 SARD) | 0.100 | 0.138 | +0.037 (+0.015 to +0.058) | 0.136 |
+| v6 (300 SARD) | 0.097 | 0.148 | +0.054 (+0.030 to +0.075) | 0.044 |
+| v9 (sim only, frozen) | 0.076 | 0.232 | +0.156 (+0.126 to +0.189) | 0.045 |
+
+Across three real datasets the 300 SARD images help on SARD's own test
+photos, roughly break even on HERIDAL, and hurt here: what they teach is
+SARD's footage. Tiling matters most for the models that kept the pretrained
+network's general knowledge (v0, v9). Colour-only models find some people in
+thermal images; the untrained one does about as well as on colour. One
+flight, one site: a single sample of real footage, not a benchmark.
+
 ### Precision-recall curves
 
 Source: `docs/images/pr_curves.png`, from the stored predictions. On real

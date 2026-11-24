@@ -279,6 +279,27 @@ make extra-real REAL_NAME=heridal VERSIONS="v0 v1 v4 v6 v7"
 
 Results: `docs/results/extra_real.csv`.
 
+### A third real test set: WiSARD (colour and thermal)
+
+The WiSARD sample from the University of Washington's dataset site
+(https://sites.google.com/uw.edu/wisard/): one search flight at Mt Erie,
+264 colour (3840 x 2160) and 264 thermal (640 x 512) images, YOLO-format
+labels. MIT-style licence on the site. Fetched as one zip from Google Drive
+(0.97 GB; Drive refused it for a day with a download quota); MD5
+`4e0c4a8678420ff6e95f894d7a7d8e8f`. Unpack into `data/real/wisard/sample/`, then:
+
+```bash
+.venv/bin/python -m sardrone.fo.yolo_real --name wisard-vis --dir data/real/wisard/sample/210417_MtErie_Enterprise_VIS_0003
+```
+
+```bash
+.venv/bin/python -m sardrone.fo.yolo_real --name wisard-ir --dir data/real/wisard/sample/210417_MtErie_Enterprise_IR_0004
+```
+
+```bash
+make extra-real REAL_NAME=wisard-vis VERSIONS="v0 v4 v6 v9"
+```
+
 ### The agent's decisions as an episode
 
 ```bash

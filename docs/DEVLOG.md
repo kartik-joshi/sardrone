@@ -1628,3 +1628,31 @@ rebuilt exactly from its recorded settings), one run each:
   images, scores level with v6 on HERIDAL and finds the most people there
   of any untiled model. One run, overlapping intervals.
 - Next: v9's freezing with v4's 300 real images, over seeds.
+
+## WiSARD: a third real dataset, colour and thermal (issue #9, 2026-11-24)
+
+The one-flight sample (0.97 GB) downloaded after Google Drive refused it for
+about a day ("too many downloads"). 264 colour images (4K) with 1,022
+people, 264 thermal (640 x 512) with 1,006, labels YOLO-style, frames in
+flight order but sampled (frame numbers skip), so it is a sequence of
+stills, not video. Counts match the archive's own count.txt.
+
+Scores (mAP@0.5, scorecard cut-offs, nothing tuned on WiSARD):
+
+| | Colour | Colour tiled | Thermal |
+| --- | --- | --- | --- |
+| v0 | 0.125 | 0.314 | 0.150 |
+| v4 | 0.100 | 0.138 | 0.136 |
+| v6 | 0.097 | 0.148 | 0.044 |
+| v9 | 0.076 | 0.232 | 0.045 |
+
+- v4 and v6 (300 SARD photos) are below the untrained model here. Over
+  three real datasets the SARD photos help on SARD, break even on HERIDAL
+  and hurt on WiSARD.
+- Tiling: +0.19 for v0, +0.16 for v9, small for v4 and v6.
+- Thermal: the untrained colour model finds people about as well as on
+  colour; the fine-tuned ones much worse. Relevant to the triage idea (#13).
+- Bug caught: the tiled-gains step rewrote `tiled_gain.csv` with only the
+  WiSARD rows, dropping HERIDAL's and SARD's. Restored from git; the file
+  is now merged row by row (tested).
+- Still open in #9: continuous real video, to test the tracker.

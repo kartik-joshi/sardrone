@@ -112,6 +112,15 @@ real photos no model trained on, tiling on HERIDAL finds about twice as
 many people (v6 recall 0.29 to 0.55) at lower precision (0.49 to 0.30).
 [docs/results/tiled.md](docs/results/tiled.md)
 
+**7. A third real dataset: fine-tuning on one real dataset did not carry
+over.** On WiSARD (one real search flight, 4K colour, 1,022 people), the
+models trained with 300 SARD photos scored below the untrained one (tiled:
+0.14 and 0.15 against 0.31). The real images taught SARD's footage, not
+"real". The untrained model with tiling did best (0.314; it finds 60 % of
+the people). On WiSARD's thermal images, colour-only models still find some
+people (untrained: 0.15).
+[docs/results/extra_real.csv](docs/results/extra_real.csv)
+
 ## How it fits together
 
 ```
@@ -301,7 +310,9 @@ v1.0 is complete; work continues. Each item is an issue in the
    ([#8](https://github.com/kartik-joshi/sardrone/issues/8)): three PX4 flights with the keyword agent, two right and
    the expected miss ("report anyone sitting"); the language-model flights
    follow the limit reset.
-7. **Real drone video,** not only still photos. ([#9](https://github.com/kartik-joshi/sardrone/issues/9))
+7. **Real drone video:** a real search flight (WiSARD's sample, colour and
+   thermal) is now a test set (finding 7); continuous video for the tracker
+   is still to find. ([#9](https://github.com/kartik-joshi/sardrone/issues/9))
 8. **The whole pipeline** end to end with one command. ([#10](https://github.com/kartik-joshi/sardrone/issues/10))
 9. ~~**A FiftyOne plugin**~~ Done: [plugins/sim2real_gap](plugins/sim2real_gap)
    measures how different two image sets look on any dataset ([#11](https://github.com/kartik-joshi/sardrone/issues/11)), and **the simulated dataset on Hugging Face**
@@ -328,6 +339,13 @@ Details in [docs/report.md](docs/report.md), section 7.
   "Search and Rescue Image Dataset for Person Detection", CC BY 4.0,
   doi:10.21227/ahxm-k331. Not redistributed here; one annotated picture in
   [docs/images](docs/images/v1_on_sard.jpg) shows frames from it.
+- **HERIDAL** (second real test set): Aalto University's modified copy by
+  Pasi Pyrrö, CC BY 3.0, Zenodo record 5662351. Not redistributed here.
+- **WiSARD** (third real test set, colour and thermal): Daniel Broyles,
+  Christopher Hayner and Karen Leung, University of Washington, "WiSARD: A
+  Labeled Visual and Thermal Image Dataset for Wilderness Search and
+  Rescue" (IROS 2022); MIT-style licence on the dataset's site. Only its
+  one-flight sample is used, as a test set. Not redistributed here.
 - **3D models** from Gazebo Fuel (CC0 and CC BY 4.0): see
   [docs/ASSETS.md](docs/ASSETS.md). Not redistributed here.
 - **PX4-Autopilot:** BSD 3-Clause; its x500 model is referenced, not copied.

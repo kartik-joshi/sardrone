@@ -161,3 +161,16 @@ def test_paired_difference_refuses_different_test_sets():
     b = _matched([[True], [False]], [1, 2])
     with pytest.raises(ValueError):
         paired_difference(a, b, 10)
+
+
+def test_new_gain_rows_merge_without_dropping_other_datasets(tmp_path):
+    import csv
+
+    from sardrone.train.tiled import merge_rows
+
+    path, fields = tmp_path / "g.csv", ["dataset", "version", "gain"]
+    merge_rows(path, [{"dataset": "heridal", "version": "v4", "gain": 0.1}], fields)
+    merge_rows(path, [{"dataset": "wisard-vis", "version": "v4", "gain": 0.2}], fields)
+    merge_rows(path, [{"dataset": "heridal", "version": "v4", "gain": 0.3}], fields)  # replaces, not appends
+    rows = list(csv.DictReader(open(path)))
+    assert [(r["dataset"], r["gain"]) for r in rows] == [("heridal", "0.3"), ("wisard-vis", "0.2")]
