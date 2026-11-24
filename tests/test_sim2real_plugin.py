@@ -87,7 +87,9 @@ def test_both_operators_run_as_a_fiftyone_plugin(tiny, monkeypatch):
         ctx={"dataset": tiny, "params": {"sim_view": "sim", "real_view": "real", "brain_key": "s2r_map"}},
     )
     assert measured.error is None, measured.error
-    assert measured.result["separability"] > 0.95
+    # Shown as percentages; the stored summary keeps fractions.
+    assert measured.result["separability"].endswith(" %") and float(measured.result["separability"][:-2]) > 95
+    assert tiny.info["sim2real_gap"]["separability"] > 0.95
     assert "s2r_map" in tiny.list_brain_runs()
 
     reviewed = foo.execute_operator(

@@ -31,6 +31,15 @@ def _detection_fields(dataset):
     )
 
 
+def for_display(summary: dict) -> dict:
+    """The operator's output: scores as percentages with one decimal (the
+    stored summary in dataset.info keeps fractions)."""
+    shown = dict(summary)
+    for key in ("separability", "sanity_sim_vs_sim", "sanity_real_vs_real"):
+        shown[key] = f"{100 * summary[key]:.1f} %"
+    return shown
+
+
 class MeasureSim2RealGap(foo.Operator):
     @property
     def config(self):
@@ -65,17 +74,17 @@ class MeasureSim2RealGap(foo.Operator):
             embeddings_field=ctx.params.get("embeddings_field") or "clip_embedding",
             brain_key=ctx.params.get("brain_key") or None,
         )
-        return summary
+        return for_display(summary)
 
     def resolve_output(self, ctx):
         outputs = types.Object()
-        outputs.float("separability", label="Separability (50 % = alike, 100 % = trivially different)")
+        outputs.str("separability", label="Separability (50 % = alike, 100 % = trivially different)")
         outputs.str("verdict", label="Verdict")
-        outputs.float("sanity_sim_vs_sim", label="Sanity: sim vs sim (should be near 50 %)")
-        outputs.float("sanity_real_vs_real", label="Sanity: real vs real (should be near 50 %)")
+        outputs.str("sanity_sim_vs_sim", label="Sanity: sim vs sim (should be near 50 %)")
+        outputs.str("sanity_real_vs_real", label="Sanity: real vs real (should be near 50 %)")
         outputs.int("sim_images", label="Simulated images")
         outputs.int("real_images", label="Real images")
-        outputs.str("brain_key", label="Embedding map: open the Embeddings panel, colour by sim2real_domain")
+        outputs.str("brain_key", label="Embedding map (brain key): open the Embeddings panel, colour by sim2real_domain")
         return types.Property(outputs)
 
 
