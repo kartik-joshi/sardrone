@@ -222,15 +222,37 @@ def _write(view, ids: list, values, path: str, patches_field: str | None) -> Non
 # ---- the measurement --------------------------------------------------------------
 
 
+MIN_GROUP = 50  # groups smaller than this are listed but not ranked
+REPEATS = 3  # subsamples averaged for each group's scores
+
+
+def frechet_with_baseline(a: np.ndarray, b: np.ndarray, n: int, seed: int = 0) -> dict:
+    """The Frechet distance between `a` and `b` at `n` items each, next to the
+    same distance between two disjoint halves of `a` and of `b` at the same n.
+    At typical sizes most of a raw Frechet distance is small-sample bias; the
+    baselines show what "no gap" scores, and `excess` is the gap above it.
+    Needs at least 2n items in each set."""
+    rng = np.random.default_rng(seed)
+    pa, pb = rng.permutation(len(a)), rng.permutation(len(b))
+    a1, a2, b1, b2 = a[pa[:n]], a[pa[n:2 * n]], b[pb[:n]], b[pb[n:2 * n]]
+    gap_value = frechet_distance(a1, b1)
+    base_a, base_b = frechet_distance(a1, a2), frechet_distance(b1, b2)
+    return {"frechet": round(gap_value, 4), "baseline_sim": round(base_a, 4), "baseline_real": round(base_b, 4),
+            "excess": round(gap_value - (base_a + base_b) / 2, 4), "n": n}  # fmt: skip
+
+
 def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", model_name: str = DEFAULT_MODEL,
             patches_field: str | None = None, group_field: str | None = None, prefix: str = DEFAULT_PREFIX,
             brain_key: str | None = "sim2real_gap", max_items: int | None = 5000, seed: int = 0,
             log=lambda message: None) -> dict:  # fmt: skip
     """Measure the gap between two views (from one dataset or two).
 
-    Writes per-item fields (see the module docstring) on both sets, saves two
-    views when both sets are in one dataset, and returns a summary that is
-    also stored in `dataset.info[prefix]` of each dataset involved.
+    Everything is computed first; only then are the previous run's results
+    cleared and the new ones written, so a failure part-way leaves the
+    previous results intact. Writes per-item fields (see the module
+    docstring) on both sets, saves two views when both sets are in one
+    dataset, stores the summary in `dataset.info[prefix]`, and finally (if
+    asked) builds the embedding map, whose failure is recorded, not raised.
     """
     same = sim_view._dataset.name == real_view._dataset.name
     if same:
@@ -247,15 +269,12 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     if sim.shape[1] != real.shape[1]:
         raise ValueError(f"embedding sizes differ ({sim.shape[1]} vs {real.shape[1]}): use one model for both")
 
-    for dataset in {sim_view._dataset.name: sim_view._dataset, real_view._dataset.name: real_view._dataset}.values():
-        clear_previous(dataset, prefix, patches_field)
-
-    # Set-level scores on (at most) max_items per set, for speed; the Frechet
-    # distance on equal-sized subsets, since it is biased by set size.
+    # ---- compute everything ----
     si, ri = subsample(len(sim), max_items, seed), subsample(len(real), max_items, seed + 1)
-    n_equal = min(len(si), len(ri))
-    log("separability, sanity checks, permutation test, Frechet distance ...")
+    log("separability, sanity checks, permutation test ...")
     sep, sep_std = separability(sim[si], real[ri], seed)
+    n_fd = min(len(si), len(ri)) // 2
+    fd = frechet_with_baseline(sim[si], real[ri], n_fd, seed)
     summary = {
         "level": "objects" if patches_field else "images",
         "patches_field": patches_field,
@@ -268,9 +287,12 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
         "sanity_sim_vs_sim": round(separability(*random_halves(sim[si], seed), seed)[0], 4),
         "sanity_real_vs_real": round(separability(*random_halves(real[ri], seed), seed)[0], 4),
         "p_value": round(permutation_p_value(sim[si], real[ri], seed), 4),
-        "frechet": round(frechet_distance(*equal_size(sim[si], real[ri], n_equal, seed)), 4),
-        "frechet_n": n_equal,
-        "small_sets": n_equal < 50,
+        "frechet": fd["frechet"],
+        "frechet_baseline_sim": fd["baseline_sim"],
+        "frechet_baseline_real": fd["baseline_real"],
+        "frechet_excess": fd["excess"],
+        "frechet_n": n_fd,
+        "small_sets": min(len(si), len(ri)) < 50,
         "verdict": verdict(sep),
         "fields": {"domain": f"{prefix}_domain", "realism": f"{prefix}_realism", "nearest": f"{prefix}_nearest"},
     }
@@ -290,61 +312,82 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     near_sim, near_real = nearest_distance(sim, real), nearest_distance(real, sim)
     summary["realism_sim_mean"] = round(float(p_sim.mean()), 4)
     summary["uncovered_real_p90"] = round(float(np.percentile(near_real, 90)), 4)
+    if group_field:
+        log(f"breakdown by {group_field} ...")
+        summary["groups"] = groups(sim_view, real[ri], group_field, embeddings_field, patches_field, seed,
+                                   realism_by_id=dict(zip(sim_ids, p_sim)))  # fmt: skip
 
+    # ---- only now: replace the previous run's results ----
+    datasets = {sim_view._dataset.name: sim_view._dataset, real_view._dataset.name: real_view._dataset}
+    for dataset in datasets.values():
+        clear_previous(dataset, prefix, patches_field)
     for view, ids, domain, p, near in ((sim_view, sim_ids, "sim", p_sim, near_sim),
                                        (real_view, real_ids, "real", p_real, near_real)):  # fmt: skip
         _write(view, ids, [domain] * len(ids), f"{prefix}_domain", patches_field)
         _write(view, ids, np.round(p, 4), f"{prefix}_realism", patches_field)
         _write(view, ids, np.round(near, 4), f"{prefix}_nearest", patches_field)
-
-    if group_field:
-        log(f"breakdown by {group_field} ...")
-        realism_by_id = dict(zip(sim_ids, p_sim))
-        summary["groups"] = groups(sim_view, real[ri], group_field, embeddings_field, patches_field, seed,
-                                   realism_by_id=realism_by_id)  # fmt: skip
-
     if same:
         summary["views"] = save_views(sim_view, prefix, patches_field, sim_ids, real_ids)
-        set_domain_colours(sim_view._dataset, f"{patches_field}.{prefix}_domain" if patches_field else f"{prefix}_domain")
-        if brain_key:
-            log("embedding map ...")
-            summary["brain_key"] = embedding_map(sim_view, real_view, embeddings_field, patches_field, brain_key, seed)
-    for dataset in {sim_view._dataset.name: sim_view._dataset, real_view._dataset.name: real_view._dataset}.values():
+        if not patches_field:  # label attributes are coloured differently in the App; leave those alone
+            set_domain_colours(sim_view._dataset, f"{prefix}_domain")
+    for dataset in datasets.values():
         dataset.info[prefix] = summary
         dataset.save()
+
+    if same and brain_key:
+        log("embedding map ...")
+        try:
+            summary["brain_key"] = embedding_map(sim_view, real_view, sim_ids + real_ids, np.vstack([sim, real]),
+                                                 patches_field, brain_key, seed)  # fmt: skip
+        except Exception as error:  # noqa: BLE001 - the measurement stands without the map
+            summary["map_error"] = f"{type(error).__name__}: {error}"
+        for dataset in datasets.values():
+            dataset.info[prefix] = summary
+            dataset.save()
     return summary
 
 
 def groups(sim_view, real: np.ndarray, group_field: str, embeddings_field: str, patches_field: str | None,
-           seed: int = 0, min_items: int = 2 * FOLDS, realism_by_id: dict | None = None) -> list[dict]:  # fmt: skip
-    """Each value of `group_field` in the simulated set against the whole real
-    set, most real-like first. Separability saturates at 100 % when every
-    group is easy to tell from real, so groups are also compared by Frechet
-    distance (which keeps ranking them) and by their mean realism score."""
+           seed: int = 0, min_group: int = MIN_GROUP, repeats: int = REPEATS,
+           realism_by_id: dict | None = None) -> list[dict]:  # fmt: skip
+    """Each value of `group_field` in the simulated set against the real set.
+
+    Groups with at least `min_group` items are ranked, most real-like first:
+    all at ONE common size n (the smallest ranked group, capped by half the
+    real set), each score the mean over `repeats` random subsamples, and the
+    Frechet distance given as its excess over a real-vs-real baseline at the
+    same n. Smaller groups are listed with their mean realism but not ranked:
+    at a few dozen items the scores are mostly noise."""
     from fiftyone import ViewField as F
 
-    members = [(value, sim_view.match(F(group_field) == value)) for value in sorted(sim_view.distinct(group_field), key=str)]
+    members = [(v, sim_view.match(F(group_field) == v)) for v in sorted(sim_view.distinct(group_field), key=str)]
     missing = sim_view.match(~F(group_field).exists())
     if len(missing):
         members.append(("(none)", missing))
     data = [(value, *_items(view, embeddings_field, patches_field)) for value, view in members]
-    # Every group is compared with the real set at ONE common size n, so their
-    # separability and Frechet distance are comparable with each other.
-    eligible = [len(x) for _, _, x in data if len(x) >= min_items]
-    n = min(eligible + [len(real)]) if eligible else 0
+    ranked = [len(x) for _, _, x in data if len(x) >= min_group]
+    n = min(ranked + [len(real) // 2]) if ranked else 0
     rows = []
     for k, (value, ids, x) in enumerate(data):
-        row = {"value": value, "items": len(x), "n": None, "separability": None, "frechet": None, "realism": None}
+        row = {"value": value, "items": len(x), "n": None, "ranked": False,
+               "separability": None, "frechet_excess": None, "realism": None}  # fmt: skip
         if realism_by_id:
             scores = [realism_by_id[i] for i in ids if i in realism_by_id]
             row["realism"] = round(float(np.mean(scores)), 4) if scores else None
-        if len(x) >= min_items and n >= min_items:
-            xs, rs = equal_size(x, real, n, seed + k)
-            sep, std = separability(xs, rs, seed)
-            row.update(n=n, separability=round(sep, 4), std=round(std, 4), frechet=round(frechet_distance(xs, rs), 4))
+        if len(x) >= min_group and n >= min_group:
+            seps, excess = [], []
+            for r in range(repeats):
+                rng = np.random.default_rng(seed + 100 * k + r)
+                xs = x[rng.choice(len(x), n, replace=False)]
+                perm = rng.permutation(len(real))
+                r1, r2 = real[perm[:n]], real[perm[n:2 * n]]
+                seps.append(separability(xs, r1, seed + r)[0])
+                excess.append(frechet_distance(xs, r1) - frechet_distance(r1, r2))
+            row.update(n=n, ranked=True, separability=round(float(np.mean(seps)), 4),
+                       frechet_excess=round(float(np.mean(excess)), 4))  # fmt: skip
         rows.append(row)
     big = float("inf")
-    return sorted(rows, key=lambda r: (r["separability"] is None, r["separability"] or 0, r["frechet"] or big))
+    return sorted(rows, key=lambda r: (not r["ranked"], r["separability"] or 0, r["frechet_excess"] or big))
 
 
 def save_views(sim_view, prefix: str, patches_field: str | None, sim_ids: list, real_ids: list) -> dict:
@@ -388,18 +431,27 @@ def set_domain_colours(dataset, path: str) -> bool:
     return True
 
 
-def embedding_map(sim_view, real_view, embeddings_field: str, patches_field: str | None, brain_key: str,
-                  seed: int = 0) -> str:  # fmt: skip
-    """A 2-D UMAP of both sets for the App's Embeddings panel."""
+def embedding_map(sim_view, real_view, ids: list, embeddings: np.ndarray, patches_field: str | None,
+                  brain_key: str, seed: int = 0) -> str:  # fmt: skip
+    """A 2-D UMAP of both sets for the App's Embeddings panel, from the
+    embeddings already in memory (`ids[i]` is the sample, or object, of row i),
+    so the Brain never has to look them up or recompute them."""
     import fiftyone.brain as fob
 
     dataset = sim_view._dataset
-    both = dataset.select(list(set(sim_view.values("id")) | set(real_view.values("id"))))
     if brain_key in dataset.list_brain_runs():
         dataset.delete_brain_run(brain_key)
-    kwargs = {"patches_field": patches_field} if patches_field else {}
-    fob.compute_visualization(both, embeddings=embeddings_field, brain_key=brain_key, method="umap", seed=seed,
-                              verbose=False, **kwargs)  # fmt: skip
+    vectors = dict(zip(ids, embeddings))
+    if patches_field:  # the Brain wants, per sample, an array of its objects' embeddings
+        both = dataset.select(sim_view.values("id") + real_view.values("id"), ordered=True)
+        both = both.select_labels(ids=ids, fields=patches_field)  # only objects that have an embedding
+        per_sample = [np.array([vectors[i] for i in boxes]) for boxes in both.values(f"{patches_field}.detections.id")]
+        fob.compute_visualization(both, embeddings=per_sample, patches_field=patches_field, brain_key=brain_key,
+                                  method="umap", seed=seed, verbose=False)  # fmt: skip
+    else:
+        both = dataset.select(ids, ordered=True)
+        fob.compute_visualization(both, embeddings=np.array([vectors[i] for i in both.values("id")]),
+                                  brain_key=brain_key, method="umap", seed=seed, verbose=False)  # fmt: skip
     return brain_key
 
 

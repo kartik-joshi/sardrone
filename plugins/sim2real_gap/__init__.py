@@ -49,15 +49,17 @@ def report(summary: dict) -> str:
     level = "objects" if summary["level"] == "objects" else "images"
     lines = [
         f"### Separability: **{pct(summary['separability'])}** "
-        f"(spread across folds ± {pct(summary['separability_std'])}; permutation p = {summary['p_value']:.3f})",
+        f"(spread across folds ± {pct(summary['separability_std'])}; permutation p = {summary['p_value']:.4f})",
         f"_{summary['verdict']}_",
         "",
         "| Check | Value |",
         "| --- | --- |",
         f"| Sanity: simulated vs simulated | {pct(summary['sanity_sim_vs_sim'])} (should be near 50 %) |",
         f"| Sanity: real vs real | {pct(summary['sanity_real_vs_real'])} (should be near 50 %) |",
-        f"| Frechet distance ({summary['model']}) | {summary['frechet']:.3f} at {summary['frechet_n']} per set "
-        "(biased by set size: compare runs at the same size) |",
+        f"| Frechet distance ({summary['model']}), {summary['frechet_n']} per set | {summary['frechet']:.3f} |",
+        f"| Same-source baselines at that size (sim vs sim, real vs real) | "
+        f"{summary['frechet_baseline_sim']:.3f}, {summary['frechet_baseline_real']:.3f} |",
+        f"| **Gap above the baselines (Frechet excess)** | **{summary['frechet_excess']:.3f}** |",
         f"| {level.capitalize()}: simulated / real | {summary['sim_items']} / {summary['real_items']} |",
         f"| Mean realism of simulated {level} | {pct(summary['realism_sim_mean'])} |",
     ]
@@ -66,12 +68,14 @@ def report(summary: dict) -> str:
                   "trust the permutation p-value more than the percentage."]  # fmt: skip
     if summary.get("groups"):
         n = next((g["n"] for g in summary["groups"] if g.get("n")), None)
-        lines += ["", f"**Closest to real first** (each group vs the real set at {n} items each, "
-                  "by separability, then Frechet distance):", "",
-                  "| Value | Items | Separability | Frechet | Mean realism |", "| --- | --- | --- | --- | --- |"]
-        lines += [f"| {g['value']} | {g['items']} | {pct(g['separability'])} | "
-                  f"{'-' if g.get('frechet') is None else format(g['frechet'], '.3f')} | {pct(g.get('realism'))} |"
-                  for g in summary["groups"]]  # fmt: skip
+        head = (f"each group vs the real set at {n} items each, mean of 3 subsamples" if n
+                else "no group has enough items to rank")  # fmt: skip
+        lines += ["", f"**Closest to real first** ({head}; groups under 50 items are listed, not ranked):", "",
+                  "| Value | Items | Separability | Frechet excess | Mean realism |", "| --- | --- | --- | --- | --- |"]
+        for g in summary["groups"]:
+            excess = "-" if g.get("frechet_excess") is None else format(g["frechet_excess"], ".3f")
+            sep = pct(g["separability"]) if g.get("ranked") else "too few to rank"
+            lines.append(f"| {g['value']} | {g['items']} | {sep} | {excess} | {pct(g.get('realism'))} |")
     f = summary["fields"]
     lines += ["", f"Per-item fields: `{f['realism']}` (probability of looking real), "
               f"`{f['nearest']}` (distance to the nearest item of the other set), `{f['domain']}`."]  # fmt: skip
@@ -81,6 +85,8 @@ def report(summary: dict) -> str:
                   f"`{v['uncovered_real']}` (what the simulation is missing first)."]  # fmt: skip
     if summary.get("brain_key"):
         lines += [f"Embedding map: brain key `{summary['brain_key']}`, colour by `{f['domain']}`."]
+    if summary.get("map_error"):
+        lines += [f"The embedding map could not be built ({summary['map_error']}); every score above stands."]
     return "\n".join(lines)
 
 

@@ -101,8 +101,8 @@ def tiny(tmp_path):
     basis = np.linalg.qr(rng.normal(size=(DIM, 3)))[0].T * 6.0
     r, s_dir, o = basis
     a_dir = 0.8 * r + 0.2 * s_dir
-    specs = ([("sim", "A", a_dir)] * 30 + [("sim", "B", s_dir)] * 30 + [("real", None, r)] * 36
-             + [("real", "odd", o)] * 4)  # fmt: skip
+    specs = ([("sim", "A", a_dir)] * 60 + [("sim", "B", s_dir)] * 60 + [("real", None, r)] * 72
+             + [("real", "odd", o)] * 8)  # fmt: skip
     for index, (domain, world, centre) in enumerate(specs):
         sample = fo.Sample(filepath=_image(tmp_path / f"img_{index}.jpg"), tags=[domain])
         sample["world"] = world
@@ -127,7 +127,7 @@ def test_measure_writes_scores_views_and_a_group_breakdown(tiny):
     # clearly, but not trivially, separable.
     assert 0.6 < summary["separability"] < 0.99 and summary["frechet"] > 0
     assert 0.2 < summary["sanity_sim_vs_sim"] < 0.8
-    assert tiny.count_values("s2r_domain") == {"sim": 60, "real": 40}
+    assert tiny.count_values("s2r_domain") == {"sim": 120, "real": 80}
     # World A was built close to real, B far: A comes first, and its frames look more real.
     assert [g["value"] for g in summary["groups"]] == ["A", "B"]
     F = fo.ViewField
@@ -135,7 +135,7 @@ def test_measure_writes_scores_views_and_a_group_breakdown(tiny):
     assert realism["A"] > realism["B"]
     # The "uncovered" view leads with the real images unlike anything simulated.
     uncovered = tiny.load_saved_view("s2r-uncovered-real")
-    assert set(uncovered.limit(4).values("world")) == {"odd"}
+    assert set(uncovered.limit(8).values("world")) == {"odd"}
     realistic = tiny.load_saved_view("s2r-realistic-sim")
     assert realistic.first()["world"] == "A"
     assert tiny.info["s2r"]["separability"] == summary["separability"]
@@ -153,7 +153,7 @@ def test_two_datasets_score_both_without_a_map(tiny, tmp_path):
     real2 = fo.Dataset(other)
     rng = np.random.default_rng(5)
     samples = []
-    for index in range(30):
+    for index in range(60):
         sample = fo.Sample(filepath=_image(tmp_path / f"other_{index}.jpg"))
         sample["clip_embedding"] = rng.normal(3.0, 1.0, DIM).tolist()
         samples.append(sample)
@@ -161,7 +161,7 @@ def test_two_datasets_score_both_without_a_map(tiny, tmp_path):
     try:
         summary = gap.measure(tiny.load_saved_view("sim"), real2.view(), brain_key="never_used", prefix="x")
         assert "views" not in summary and "brain_key" not in summary
-        assert real2.count_values("x_domain") == {"real": 30}
+        assert real2.count_values("x_domain") == {"real": 60}
         assert "x" in real2.info and "x" in tiny.info
     finally:
         fo.delete_dataset(other)
@@ -176,16 +176,16 @@ def test_object_level_scores_each_box(tiny):
         sample.save()
     summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), embeddings_field="obj_embedding",
                           patches_field="ground_truth", prefix="obj", brain_key=None)  # fmt: skip
-    assert summary["level"] == "objects" and summary["sim_items"] == 60
+    assert summary["level"] == "objects" and summary["sim_items"] == 120
     values = [d for boxes in tiny.values("ground_truth.detections.obj_realism") for d in boxes]
-    assert len(values) == 100 and all(0 <= v <= 1 for v in values)
+    assert len(values) == 200 and all(0 <= v <= 1 for v in values)
     patches = tiny.load_saved_view("obj-uncovered-real")
-    assert len(patches) == 40  # one patch per real box
+    assert len(patches) == 80  # one patch per real box
 
 
 def test_review_finds_false_alarms_and_misses(tiny):
     alarms = gap.review(tiny.view(), "predictions", min_confidence=0.3)
-    assert len(alarms) == 100 and alarms.first()["predictions"].confidence == pytest.approx(0.8)
+    assert len(alarms) == 200 and alarms.first()["predictions"].confidence == pytest.approx(0.8)
     assert len(gap.review(tiny.view(), "predictions", kind="misses")) == 0  # every person was found
 
 
@@ -213,7 +213,7 @@ def test_the_operators_run_as_a_fiftyone_plugin(tiny, monkeypatch):
                         "save_as": "worst-alarms"}},  # fmt: skip
     )
     assert reviewed.error is None, reviewed.error
-    assert reviewed.result["count"] == 100 and "worst-alarms" in tiny.list_saved_views()
+    assert reviewed.result["count"] == 200 and "worst-alarms" in tiny.list_saved_views()
 
     legacy = foo.execute_operator(  # the 1.0 operator name still works
         "@kartik-joshi/sim2real-gap/review_false_alarms",
@@ -255,7 +255,7 @@ def test_a_second_run_replaces_the_first_runs_results_and_views(tiny):
     gap.measure(tiny.match(F("world") == "B"), real, brain_key=None)
     realistic = tiny.load_saved_view("s2r-realistic-sim")
     assert set(realistic.values("world")) == {"B"}  # world A's samples are gone
-    assert tiny.count_values("s2r_domain") == {"sim": 30, "real": 40, None: 30}  # A's scores cleared too
+    assert tiny.count_values("s2r_domain") == {"sim": 60, "real": 80, None: 60}  # A's scores cleared too
 
 
 def test_reviewing_two_prediction_fields_works_and_keeps_one_evaluation_each(tiny):
@@ -268,14 +268,24 @@ def test_reviewing_two_prediction_fields_works_and_keeps_one_evaluation_each(tin
     assert sorted(tiny.list_evaluations()) == ["s2r_predictions", "s2r_predictions2"]
 
 
-def test_groups_are_compared_at_one_common_size(tiny):
+def test_a_rare_group_is_listed_but_neither_ranked_nor_shrinking_the_others(tiny):
     F = fo.ViewField
     sim = tiny.load_saved_view("sim")
-    sim.match(F("world") == "B").limit(12).set_field("world", "B-small").save()  # unequal group sizes
+    sim.match(F("world") == "B").limit(8).set_field("world", "B-rare").save()  # 8 images: too few to rank
+    rng = np.random.default_rng(12)
+    real = gap.normalise(rng.normal(0, 1, (120, DIM)))  # 120 real: half is 60
+    rows = gap.groups(tiny.load_saved_view("sim"), real, "world", "clip_embedding", None)
+    by_value = {g["value"]: g for g in rows}
+    assert by_value["B-rare"]["ranked"] is False and by_value["B-rare"]["separability"] is None
+    assert by_value["A"]["ranked"] and by_value["B"]["ranked"]
+    assert {by_value["A"]["n"], by_value["B"]["n"]} == {52}  # the smallest RANKED group (B, 52), not 8
+    assert rows[-1]["value"] == "B-rare"  # unranked groups come last
+
+
+def test_no_group_is_ranked_when_the_real_set_is_too_small_for_a_baseline(tiny):
     summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), group_field="world",
-                          brain_key=None)  # fmt: skip
-    sizes = {g["n"] for g in summary["groups"] if g["n"]}
-    assert sizes == {12}  # every group vs real at the same n
+                          brain_key=None)  # 80 real: 40 per half, under 50  # fmt: skip
+    assert summary["groups"] and not any(g["ranked"] for g in summary["groups"])
 
 
 def test_missing_group_values_form_their_own_group(tiny):
@@ -288,7 +298,9 @@ def test_missing_group_values_form_their_own_group(tiny):
 
 def test_p_value_and_equal_size_frechet_are_reported(tiny):
     summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), brain_key=None)
-    assert summary["p_value"] < 0.05 and summary["frechet_n"] == 40
+    assert summary["p_value"] < 0.05 and summary["frechet_n"] == 40  # half of the smaller set (80 real)
+    assert summary["frechet_excess"] == pytest.approx(
+        summary["frechet"] - (summary["frechet_baseline_sim"] + summary["frechet_baseline_real"]) / 2, abs=1e-3)
     rng = np.random.default_rng(9)
     same = rng.normal(0, 1, (60, DIM))
     assert gap.permutation_p_value(same[:30], same[30:]) > 0.05  # one distribution: not significant
@@ -300,3 +312,35 @@ def test_mixed_embedding_sizes_give_a_clear_error(tiny):
     first.save()
     with pytest.raises(ValueError, match="different sizes"):
         gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), brain_key=None)
+
+
+def test_frechet_baseline_shows_the_small_sample_bias():
+    rng = np.random.default_rng(10)
+    one = gap.normalise(rng.normal(0, 1, (400, DIM)))
+    fd = gap.frechet_with_baseline(one[:200], one[200:], 100)
+    assert fd["frechet"] > 0  # biased: not zero even for one source...
+    assert abs(fd["excess"]) < 0.5 * fd["frechet"]  # ...but the excess over the baseline is small
+
+
+def test_a_failed_map_keeps_every_score(tiny, monkeypatch):
+    import fiftyone.brain as fob
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("no map today")
+
+    monkeypatch.setattr(fob, "compute_visualization", broken)
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), brain_key="m")
+    assert "no map today" in summary["map_error"]
+    assert tiny.count_values("s2r_domain") == {"sim": 120, "real": 80}
+    assert tiny.info["s2r"]["separability"] == summary["separability"]
+
+
+def test_object_mode_builds_its_map_from_undeclared_embedding_attributes(tiny):
+    rng = np.random.default_rng(11)
+    for sample in tiny:  # dynamic, undeclared attributes, as in the review's crash
+        for det in sample.ground_truth.detections:
+            det["crop_vec"] = rng.normal(3.0 if "real" in sample.tags else -1.0, 1.0, DIM).tolist()
+        sample.save()
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), embeddings_field="crop_vec",
+                          patches_field="ground_truth", prefix="obj", brain_key="obj_map")  # fmt: skip
+    assert summary.get("map_error") is None and summary["brain_key"] == "obj_map"
