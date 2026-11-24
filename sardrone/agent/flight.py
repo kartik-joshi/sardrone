@@ -55,6 +55,7 @@ from sardrone.sim.camera import pinhole_intrinsics
 
 STEP_COVERAGE = 20.0  # percent of the area per get_status, as in the mission simulator
 STEP_TIMEOUT_S = 90.0  # simulated seconds a get_status may wait
+AREA_MARGIN_M = 2.0  # a sighting this far outside the searched area still counts
 
 
 def area_polygon(area: str, side_m: float) -> list[tuple[float, float]]:
@@ -68,6 +69,16 @@ def area_polygon(area: str, side_m: float) -> list[tuple[float, float]]:
         "whole area": [(-h, -h), (h, -h), (h, h), (-h, h)],
     }
     return halves[area]
+
+
+def in_area(area: str, side_m: float, east: float, north: float, margin: float = AREA_MARGIN_M) -> bool:
+    """Is a ground point inside a named area? The camera looks ahead and
+    sideways, beyond the area being searched; people out there are not part
+    of this search (in the mission simulator they are never seen)."""
+    corners = area_polygon(area, side_m)
+    norths, easts = [c[0] for c in corners], [c[1] for c in corners]
+    return (min(norths) - margin <= north <= max(norths) + margin
+            and min(easts) - margin <= east <= max(easts) + margin)  # fmt: skip
 
 
 def describe(person: dict | None) -> str:
@@ -143,7 +154,10 @@ class AgentSearch(SearchRecorder):
 
     def _collect(self):
         """Queue new believed sightings for the agent; never interrupts a lane."""
+        area = self.searched[-1][0] if self.searched else None
         for sighting in self._new_sightings():
+            if area is None or not in_area(area, self.side_m, *sighting.ground_east_north):
+                continue
             key = self._key(sighting)
             self._spots.setdefault(key, sighting.ground_east_north)
             if key not in self.pending and key not in self.confirmed_targets:
@@ -441,7 +455,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path)
     parser.add_argument("--device", default="mps")
     parser.add_argument("--max-steps", type=int, default=60)
+    parser.add_argument("--launch", action="store_true", help="start PX4 and Gazebo for this world first")
     args = parser.parse_args(argv)
+    if args.launch and not args.fake:
+        import os
+
+        from sardrone.sim.launch import Simulation, gz_python
+
+        os.environ.setdefault("SARDRONE_GZ_PYTHON", str(gz_python()))
+        with Simulation(args.world_dir):
+            return _fly(args)
+    return _fly(args)
+
+
+def _fly(args) -> int:
+    from sardrone.agent.evaluate import make_model
+    from sardrone.mcap.episode_writer import EpisodeMeta
+    from sardrone.mission.projection import CameraModel
+    from sardrone.mission.search import PROJECT_ROOT, scorecard_confidence
+    from sardrone.sim.record_flight import next_episode_path, world_settings
 
     spec, truth, extra = world_settings(args.world_dir)
     meta = EpisodeMeta(world=spec["world"], weather=spec["weather"], time_of_day=spec["time_of_day"],

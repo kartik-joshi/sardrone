@@ -43,8 +43,18 @@ def test_areas_are_halves_of_the_world_square():
     assert describe(person("p", 0, 0, "blue", "lying")) == "person in blue clothing, lying"
 
 
+def test_people_outside_the_searched_area_are_not_queued():
+    from sardrone.agent.flight import in_area
+
+    assert in_area("north field", 60, east=5.0, north=12.0)
+    assert not in_area("north field", 60, east=5.0, north=-12.0)
+    assert in_area("north field", 60, east=5.0, north=-1.5)  # within the 2 m margin
+
+
 def test_the_rule_based_agent_flies_finds_reports_and_lands(tmp_path):
-    truth = [person("person_1", 5.0, 12.0)]  # in the north field
+    # person_2 is in the south field: the pitched camera may see her, but she
+    # is not part of a north-field search and must not be reported.
+    truth = [person("person_1", 5.0, 12.0), person("person_2", 8.0, -12.0, clothing="blue")]
     drone, summary, path = fly(tmp_path, RuleBasedModel(), "Search the north field and report anyone you find.", truth)
     assert summary["ended"] == "returned_home"
     assert summary["searched"] == [["north field", 25]] or summary["searched"] == [("north field", 25)]
