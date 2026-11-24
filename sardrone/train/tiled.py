@@ -214,6 +214,64 @@ def gains(datasets: list[str], versions: list[str], repeats: int = 1000, path: P
     return rows
 
 
+CUTOFF_CSV = env.PROJECT_ROOT / "docs" / "results" / "tiled_cutoffs.csv"
+CUTOFF_FIELDS = ["version", "method", "val_images", "cutoff", "val_precision", "val_recall", "val_f1",
+                 "heridal_precision", "heridal_recall", "sard_precision", "sard_recall", "commit", "dirty",
+                 "evaluated_utc"]  # fmt: skip
+POOL_SEED, POOL_TAKEN = 51, 300  # how the 300 real training images were drawn (export.py defaults)
+
+
+def real_validation_view():
+    """SARD pool photos that no model trained on: the pool minus the 300 that
+    `export.py --add-real 300` drew with its default seed (v4, v6, v7, v8)."""
+    import fiftyone as fo
+
+    from sardrone.fo import real
+
+    pool = fo.load_dataset(real.DATASET_NAME).load_saved_view(real.VIEW_POOL)
+    used = pool.take(POOL_TAKEN, seed=POOL_SEED).values("id")
+    return pool.exclude(used)
+
+
+def cutoffs(versions: list[str], device: str = "mps", path: Path = CUTOFF_CSV, log=print) -> list[dict]:
+    """Choose each model's cut-off (best F1) on real validation photos, for
+    untiled and tiled detection alike, then apply it unchanged to the test sets."""
+    import fiftyone as fo
+
+    from sardrone.batch import git_commit
+    from sardrone.train import scorecard
+    from sardrone.train.metrics import match_dataset, operating_point
+    from sardrone.train.predict import predict_view
+    from sardrone.train.train import DEFAULT_TRAIN_ROOT
+
+    val = real_validation_view()
+    tests = {name: fo.load_dataset(d).load_saved_view(v) for name, (d, v) in VIEWS.items()}
+    commit, dirty = git_commit()
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = []
+    for version in versions:
+        run = json.loads((Path(DEFAULT_TRAIN_ROOT) / version / "run.json").read_text())
+        weights, imgsz = Path(run["weights"]), run["config"]["imgsz"]
+        log(f"{version}: predicting {len(val)} validation photos, untiled and tiled")
+        predict_view(val, weights, version, imgsz=imgsz, device=device, log=log)
+        predict_view_tiled(val, weights, version, imgsz, device, log=log)
+        for method, field in (("full", field_for(version)), ("tiled", field_for(version) + "_tiled")):
+            cut, p, r, f1 = operating_point(match_dataset(scorecard.images_from_view(val, field)))
+            row = {"version": version, "method": method, "val_images": len(val), "cutoff": round(cut, 4),
+                   "val_precision": round(p, 4), "val_recall": round(r, 4), "val_f1": round(f1, 4)}  # fmt: skip
+            for name, view in tests.items():
+                _, tp, tr, _ = operating_point(match_dataset(scorecard.images_from_view(view, field)), cut)
+                row[f"{name}_precision"], row[f"{name}_recall"] = round(tp, 4), round(tr, 4)
+            row.update({"commit": commit, "dirty": dirty, "evaluated_utc": stamp})
+            rows.append(row)
+            log(json.dumps(row))
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CUTOFF_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return rows
+
+
 def upsert(rows_new: list[dict], path: Path = DEFAULT_CSV) -> None:
     keys = {(r["dataset"], r["version"], r["method"]) for r in rows_new}
     rows = []
@@ -237,12 +295,18 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="Score models with and without tiled detection.")
     parser.add_argument("--dataset", choices=sorted(VIEWS))
+    parser.add_argument("--cutoffs", action="store_true",
+                        help="choose cut-offs on real validation photos (SARD pool minus the 300 trained on)")
     parser.add_argument("--gains", nargs="+", choices=sorted(VIEWS),
                         help="paired bootstrap of the tiled gain on these datasets, from stored predictions")
     parser.add_argument("--versions", nargs="+", required=True)
     parser.add_argument("--device", default="mps")
     parser.add_argument("--limit", type=int, help="only the first N images (smoke test; the CSV is not written)")
     args = parser.parse_args(argv)
+    if args.cutoffs:
+        cutoffs(args.versions, args.device, log=lambda m: print(m, flush=True))
+        print(f"results: {CUTOFF_CSV}")
+        return 0
     if args.gains:
         gains(args.gains, args.versions)
         print(f"results: {GAIN_CSV}")
