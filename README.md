@@ -260,6 +260,19 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   this project, so 17 of 20 is a check, not a benchmark.
 - **The retraining gate's threshold (200 hard frames) is not tuned.**
 
+## Use the method on your own data
+
+The gap measurement and false-alarm review are packaged as a FiftyOne
+plugin that works on any dataset:
+
+```bash
+fiftyone plugins download https://github.com/kartik-joshi/sardrone/tree/main/plugins/sim2real_gap
+```
+
+See [plugins/sim2real_gap](plugins/sim2real_gap). Run on two real drone
+datasets, it shows they are 98 % separable, nearly as much as simulated
+against real (100 %).
+
 ## What's next
 
 v1.0 is complete; work continues. Each item is an issue in the
@@ -278,8 +291,8 @@ v1.0 is complete; work continues. Each item is an issue in the
    sentence ([#8](https://github.com/kartik-joshi/sardrone/issues/8)).
 7. **Real drone video,** not only still photos. ([#9](https://github.com/kartik-joshi/sardrone/issues/9))
 8. **The whole pipeline** end to end with one command. ([#10](https://github.com/kartik-joshi/sardrone/issues/10))
-9. **A FiftyOne plugin** that measures the sim-to-real gap on any pair of
-   datasets ([#11](https://github.com/kartik-joshi/sardrone/issues/11)), and **the simulated dataset on Hugging Face**
+9. ~~**A FiftyOne plugin**~~ Done: [plugins/sim2real_gap](plugins/sim2real_gap)
+   measures how different two image sets look on any dataset ([#11](https://github.com/kartik-joshi/sardrone/issues/11)), and **the simulated dataset on Hugging Face**
    ([#12](https://github.com/kartik-joshi/sardrone/issues/12)).
 10. **Photo triage for search-and-rescue teams:** a prototype that ranks
     drone photos by how likely they hold a person, built with the teams
