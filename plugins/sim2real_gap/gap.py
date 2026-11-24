@@ -43,6 +43,8 @@ def normalise(embeddings) -> np.ndarray:
     x = np.asarray(embeddings, dtype=np.float32)  # half the memory of float64; plenty for cosine maths
     if x.ndim != 2 or len(x) == 0:
         raise ValueError("expected a non-empty 2-D array of embeddings")
+    if not np.isfinite(x).all():
+        raise ValueError(f"{int((~np.isfinite(x).all(axis=1)).sum())} embeddings contain NaN or infinity")
     norms = np.linalg.norm(x, axis=1, keepdims=True)
     return x / np.where(norms == 0, 1.0, norms)
 
@@ -234,20 +236,21 @@ def subsample(n: int, cap: int | None, seed: int = 0) -> np.ndarray:
 NEAR_DUPLICATE = 0.02  # cosine distance under which two items count as near-duplicates
 
 
-def near_duplicate_share(sim: np.ndarray, real: np.ndarray) -> dict:
-    """Share of items whose nearest neighbour IN THEIR OWN SET is a
+def near_duplicate_share(x: np.ndarray) -> float:
+    """Share of items whose nearest neighbour IN THE SAME SET is a
     near-duplicate (e.g. the next frame of a video). Near-duplicates land on
     both sides of a fold and inflate separability; the sanity checks cannot
     see this. If the share is high, give a split field."""
+    if len(x) < 2:
+        return 0.0
+    sims = x @ x.T
+    np.fill_diagonal(sims, -1.0)
+    return round(float(np.mean(1.0 - sims.max(axis=1) < NEAR_DUPLICATE)), 4)
 
-    def share(x):
-        if len(x) < 2:
-            return 0.0
-        sims = x @ x.T
-        np.fill_diagonal(sims, -1.0)
-        return round(float(np.mean(1.0 - sims.max(axis=1) < NEAR_DUPLICATE)), 4)
 
-    return {"sim": share(sim[:2000]), "real": share(real[:2000])}
+def _has_clusters(groups) -> bool:
+    """True if at least one cluster holds more than one item."""
+    return len(set(groups.tolist())) < len(groups)
 
 
 def verdict(score: float, p_value: float | None = None) -> str:
@@ -308,6 +311,11 @@ def _items(view, field: str, patches_field: str | None, with_owners: bool = Fals
     if len(sizes) > 1:
         raise ValueError(f"field {field!r} holds embeddings of different sizes {sorted(sizes)}: "
                          "it mixes models; use one embeddings field per model")  # fmt: skip
+    if vecs:
+        bad = [i for i, ok in zip(ids, np.isfinite(np.asarray(vecs, dtype=np.float32)).all(axis=1)) if not ok]
+        if bad:  # one NaN can make scipy's sqrtm spin forever; refuse up front
+            raise ValueError(f"{len(bad)} embeddings in {field!r} contain NaN or infinity, e.g. ids {bad[:5]}; "
+                             "recompute or remove them")  # fmt: skip
     x = normalise(vecs) if vecs else np.zeros((0, 0))
     return (ids, x, owners) if with_owners else (ids, x)
 
@@ -349,6 +357,9 @@ def _write(view, ids: list, values, path: str, patches_field: str | None) -> Non
 
 
 MIN_GROUP = 50  # groups smaller than this are listed but not ranked
+FRECHET_REPEATS = 3  # random draws averaged for the set-level Frechet distance and its baselines
+SANITY_REPEATS = 5  # random halvings averaged for each sanity check when items are clustered
+SANITY_MIN_CLUSTERS = 10  # per half; with fewer, the sanity check is reported as noisy
 REPEATS = 3  # subsamples averaged for each group's scores
 
 
@@ -407,22 +418,43 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     log("separability, sanity checks, permutation test ...")
     cs, cr = _clusters(sim_view, sim_owners, split_field, patches_field), _clusters(real_view, real_owners,
                                                                                    split_field, patches_field)
+    notes = []
+    # A split field only matters where it groups items: count clusters with more than one item.
+    cs, cr = (c if c is not None and _has_clusters(c) else None for c in (cs, cr))
+    if split_field and cs is None and cr is None:
+        notes.append(f"split field `{split_field}` groups no items in either set (empty, or one value per item); "
+                     "every item was treated on its own")  # fmt: skip
     gs, gr = (None if cs is None else cs[si]), (None if cr is None else cr[ri])
     sep, sep_std = separability(sim[si], real[ri], seed, groups_a=gs, groups_b=gr)
     n_fd = min(len(si), len(ri)) // 2
-    fd = frechet_with_baseline(sim[si], real[ri], n_fd, seed, gs, gr)
-
-    notes = []
+    draws = [frechet_with_baseline(sim[si], real[ri], n_fd, seed + k, gs, gr) for k in range(FRECHET_REPEATS)]
+    fd = {key: round(float(np.mean([d[key] for d in draws])), 4)
+          for key in ("frechet", "baseline_sim", "baseline_real", "excess")}  # fmt: skip
+    fd["excess_spread"] = round(float(np.std([d["excess"] for d in draws])), 4)
 
     def sanity(x, g, which):
-        halves = random_halves(x, seed, g)
-        try:
-            value = separability(halves[0], halves[1], seed, groups_a=halves[2], groups_b=halves[3]) \
-                if g is not None else separability(*halves, seed)
-            return round(value[0], 4)
-        except ValueError:
+        """Mean over several random halvings: with few clusters a single halving is mostly noise."""
+        values = []
+        for k in range(SANITY_REPEATS if g is not None else 1):
+            halves = random_halves(x, seed + k, g)
+            try:
+                value = separability(halves[0], halves[1], seed + k, groups_a=halves[2], groups_b=halves[3]) \
+                    if g is not None else separability(*halves, seed + k)
+                values.append(value[0])
+            except ValueError:
+                continue
+        if not values:
             notes.append(f"sanity check {which} skipped: too few clusters for {FOLDS} folds in each half")
-            return None
+            return None, None
+        k = len(set(g)) if g is not None else len(x)
+        if g is not None and k < 2 * SANITY_MIN_CLUSTERS:
+            notes.append(f"sanity check {which}: only {k} clusters, so it is noisy "
+                         f"({100 * min(values):.0f} to {100 * max(values):.0f} % over {len(values)} halvings); "
+                         "read the permutation p-value instead")  # fmt: skip
+        return round(float(np.mean(values)), 4), [round(min(values), 4), round(max(values), 4)]
+
+    sanity_sim, sanity_sim_range = sanity(sim[si], gs, "simulated vs simulated")
+    sanity_real, sanity_real_range = sanity(real[ri], gr, "real vs real")
 
     try:
         p_value = round(permutation_p_value(sim[si], real[ri], seed, groups_a=gs, groups_b=gr), 4)
@@ -438,16 +470,22 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
         "real_items": len(real_ids),
         "separability": round(sep, 4),
         "separability_std": round(sep_std, 4),
-        "sanity_sim_vs_sim": sanity(sim[si], gs, "simulated vs simulated"),
-        "sanity_real_vs_real": sanity(real[ri], gr, "real vs real"),
+        "sanity_sim_vs_sim": sanity_sim,
+        "sanity_real_vs_real": sanity_real,
+        "sanity_ranges": {"sim": sanity_sim_range, "real": sanity_real_range},
         "p_value": p_value,
-        "near_duplicates": None if cs is not None else near_duplicate_share(sim[si], real[ri]),
-        "split_by": split_field or ("image" if patches_field else None),
-        "clusters": None if cs is None else {"sim": len(set(gs)), "real": len(set(gr))},
+        # checked for each set whose items are not grouped into clusters
+        "near_duplicates": {name: (None if g is not None else near_duplicate_share(x[:2000]))
+                            for name, x, g in (("sim", sim[si], gs), ("real", real[ri], gr))},  # fmt: skip
+        "split_by": (split_field or ("image" if patches_field else None)) if (gs is not None or gr is not None) else None,
+        "clusters": None if gs is None and gr is None else
+        {"sim": None if gs is None else len(set(gs)), "real": None if gr is None else len(set(gr))},
         "frechet": fd["frechet"],
         "frechet_baseline_sim": fd["baseline_sim"],
         "frechet_baseline_real": fd["baseline_real"],
         "frechet_excess": fd["excess"],
+        "frechet_excess_spread": fd["excess_spread"],
+        "frechet_repeats": FRECHET_REPEATS,
         "frechet_n": n_fd,
         "small_sets": min(len(si), len(ri)) < 50,
         "verdict": verdict(sep, p_value),

@@ -32,10 +32,10 @@ def _detection_fields(dataset):
     return sorted(dataset.get_field_schema(embedded_doc_type=fo.Detections))
 
 
-def _group_fields(dataset):
+def _group_fields(dataset, kinds=None):
     import fiftyone as fo
 
-    kinds = (fo.StringField, fo.IntField, fo.BooleanField)
+    kinds = kinds or (fo.StringField, fo.IntField, fo.BooleanField)
     skip = {"id", "filepath", "media_type"}
     return sorted(n for n, f in dataset.get_field_schema().items()
                   if isinstance(f, kinds) and n not in skip and not n.endswith("_domain"))  # fmt: skip
@@ -55,6 +55,14 @@ def pct(x) -> str:
     return "-" if x is None else f"{100 * x:.1f} %"
 
 
+def _sanity(summary: dict, which: str) -> str:
+    value = summary["sanity_sim_vs_sim" if which == "sim" else "sanity_real_vs_real"]
+    span = (summary.get("sanity_ranges") or {}).get(which)
+    if value is None or not span or span[0] == span[1]:
+        return pct(value)
+    return f"{pct(value)}, range {pct(span[0])} to {pct(span[1])}"
+
+
 def report(summary: dict) -> str:
     """The run as Markdown, for the App and for logs."""
     level = "objects" if summary["level"] == "objects" else "images"
@@ -66,28 +74,33 @@ def report(summary: dict) -> str:
         "",
         "| Check | Value |",
         "| --- | --- |",
-        f"| Sanity: simulated vs simulated | {pct(summary['sanity_sim_vs_sim'])} (near 50 % expected; "
+        f"| Sanity: simulated vs simulated | {_sanity(summary, 'sim')} (near 50 % expected; "
         "far from it means the score is unreliable, near it proves nothing about near-duplicates) |",
-        f"| Sanity: real vs real | {pct(summary['sanity_real_vs_real'])} (near 50 % expected) |",
+        f"| Sanity: real vs real | {_sanity(summary, 'real')} (near 50 % expected) |",
         f"| Frechet distance ({summary['model']}), {summary['frechet_n']} per set | {summary['frechet']:.3f} |",
         f"| Same-source baselines at that size (sim vs sim, real vs real) | "
         f"{summary['frechet_baseline_sim']:.3f}, {summary['frechet_baseline_real']:.3f} |",
-        f"| **Gap above the baselines (Frechet excess)** | **{summary['frechet_excess']:.3f}** |",
+        f"| **Gap above the baselines (Frechet excess)** | **{summary['frechet_excess']:.3f}** "
+        f"± {summary.get('frechet_excess_spread', 0):.3f} (mean ± spread of {summary.get('frechet_repeats', 1)} draws) |",
         f"| {level.capitalize()}: simulated / real | {summary['sim_items']} / {summary['real_items']} |",
         f"| Mean realism of simulated {level} | {pct(summary['realism_sim_mean'])} |",
     ]
     for note in summary.get("notes") or []:
         lines += ["", f"_Note: {note}._"]
-    dup = summary.get("near_duplicates")
-    if dup and max(dup.values()) >= 0.2:
-        lines += ["", f"**Near-duplicates:** {100 * dup['sim']:.0f} % of simulated and {100 * dup['real']:.0f} % of real "
-                  "items have a near-copy in their own set (e.g. video frames). They inflate separability and the "
-                  "p-value; run again with a split field (the recording or episode)."]  # fmt: skip
+    dup = {k: v for k, v in (summary.get("near_duplicates") or {}).items() if v is not None}
+    flagged = {k: v for k, v in dup.items() if v >= 0.2}
+    if flagged:
+        names = {"sim": "simulated", "real": "real"}
+        said = " and ".join(f"{100 * v:.0f} % of {names[k]}" for k, v in flagged.items())
+        lines += ["", f"**Near-duplicates:** {said} items have a near-copy in their own set (e.g. video frames). "
+                  "They inflate separability and make the p-value too small; run again with a split field "
+                  "(the recording or episode) that groups them."]  # fmt: skip
     if summary.get("clusters"):
         c, by = summary["clusters"], summary.get("split_by")
         unit = "image" if by == "image" else f"`{by}` value"
-        lines += ["", f"Folds, permutations and halves keep each {unit} together "
-                  f"({c['sim']} simulated, {c['real']} real), so near-duplicates do not inflate the scores."]  # fmt: skip
+        counts = ", ".join(f"{n} {name}" for name, n in (("simulated", c["sim"]), ("real", c["real"])) if n)
+        lines += ["", f"Folds, permutations and halves keep each {unit} together ({counts} clusters), so "
+                  "near-duplicates within a cluster do not inflate the scores."]  # fmt: skip
     if summary.get("small_sets"):
         lines += ["", f"**Small sets** ({summary['frechet_n']} per side): scores are noisy; "
                   "trust the permutation p-value more than the percentage."]  # fmt: skip
@@ -166,9 +179,9 @@ class MeasureSim2RealGap(foo.Operator):
                    description="Reused if present, computed where missing")  # fmt: skip
         inputs.enum("group_field", _group_fields(ctx.dataset), label="Break down by (optional)",
                     description="E.g. world, weather or camera: which simulated conditions are closest to real")  # fmt: skip
-        split_fields = _group_fields(ctx.dataset)
+        split_fields = _group_fields(ctx.dataset, kinds=(fo.StringField, fo.IntField))  # two values cannot make folds
         if other != ctx.dataset.name and other in datasets:  # offered only if both datasets have it
-            split_fields = sorted(set(split_fields) & set(_group_fields(fo.load_dataset(other))))
+            split_fields = sorted(set(split_fields) & set(_group_fields(fo.load_dataset(other), (fo.StringField, fo.IntField))))
         inputs.enum("split_field", split_fields, label="Keep together (optional)",
                     description="E.g. a recording or episode id: its images never straddle a train/test fold. "
                     "Use it for video frames. At object level, each image's objects are always kept together")  # fmt: skip

@@ -538,8 +538,7 @@ def test_near_duplicates_are_flagged_when_no_split_field_is_given():
     rng = np.random.default_rng(23)
     frames, _ = _recordings(rng, 10, 30)
     photos = gap.normalise(rng.normal(0, 1, (300, DIM)))
-    share = gap.near_duplicate_share(frames, photos)
-    assert share["sim"] > 0.9 and share["real"] < 0.05
+    assert gap.near_duplicate_share(frames) > 0.9 and gap.near_duplicate_share(photos) < 0.05
 
 
 def test_the_detector_review_runs_again_on_its_own_patches_view(tiny):
@@ -569,6 +568,78 @@ def test_a_split_field_missing_from_the_second_dataset_is_per_sample_there(tiny,
         sample.save()
     try:
         summary = gap.measure(tiny.load_saved_view("sim"), real2.view(), split_field="recording", prefix="n")
-        assert summary["clusters"] == {"sim": 30, "real": 60}
+        assert summary["clusters"] == {"sim": 30, "real": None}  # no field there: every real item on its own
+        assert summary["near_duplicates"]["sim"] is None and summary["near_duplicates"]["real"] is not None
     finally:
         fo.delete_dataset(other)
+
+
+# ---- fixes from the fifth review -------------------------------------------------
+
+
+def test_nan_embeddings_are_refused_with_their_ids(tiny):
+    bad = tiny.load_saved_view("sim").first()
+    vec = list(bad.clip_embedding)
+    vec[3] = float("nan")
+    bad["clip_embedding"] = vec
+    bad.save()
+    with pytest.raises(ValueError, match="NaN or infinity") as error:
+        gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), brain_key=None)
+    assert bad.id in str(error.value)
+    with pytest.raises(ValueError, match="NaN"):
+        gap.normalise([[1.0, float("inf")], [1.0, 0.0]])
+
+
+def test_sanity_with_few_clusters_is_averaged_and_flagged(tiny):
+    for k, sample in enumerate(tiny.load_saved_view("sim")):
+        sample["recording"] = f"rec{k % 15}"  # 15 recordings: about 7 per half
+        sample.save()
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), split_field="recording",
+                          brain_key=None)  # fmt: skip
+    low, high = summary["sanity_ranges"]["sim"]
+    assert low <= summary["sanity_sim_vs_sim"] <= high
+    assert any("noisy" in note for note in summary["notes"])
+
+
+def test_an_empty_split_field_claims_no_clusters(tiny):
+    tiny.add_sample_field("empty_split", fo.StringField)  # declared, but None everywhere
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), split_field="empty_split",
+                          brain_key=None)  # fmt: skip
+    assert summary["clusters"] is None and summary["split_by"] is None
+    assert any("groups no items" in note for note in summary["notes"])
+    assert summary["near_duplicates"]["sim"] is not None  # still checked
+
+
+def test_the_frechet_excess_comes_with_a_spread(tiny):
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), brain_key=None)
+    assert summary["frechet_repeats"] == 3 and summary["frechet_excess_spread"] >= 0
+    report = _plugin_module().report(summary)
+    assert "mean ± spread of 3 draws" in report
+
+
+def _plugin_module():
+    spec = importlib.util.spec_from_file_location("s2r_init_report", PLUGIN_DIR / "sim2real_gap" / "__init__.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_report_shows_notes_and_near_duplicate_warnings():
+    module = _plugin_module()
+    summary = {"level": "images", "separability": 1.0, "separability_std": 0.0, "p_value": None,
+               "verdict": "x", "sanity_sim_vs_sim": None, "sanity_real_vs_real": 0.5, "sanity_ranges": {},
+               "frechet_n": 10, "frechet": 0.5, "frechet_baseline_sim": 0.1, "frechet_baseline_real": 0.1,
+               "frechet_excess": 0.4, "frechet_excess_spread": 0.01, "frechet_repeats": 3, "model": "m",
+               "sim_items": 20, "real_items": 20, "realism_sim_mean": 0.1, "notes": ["no permutation p-value: few"],
+               "near_duplicates": {"sim": 0.5, "real": None},
+               "fields": {"domain": "d", "realism": "r", "nearest": "n"}}  # fmt: skip
+    text = module.report(summary)
+    assert "permutation p = -" in text and "Note: no permutation p-value" in text
+    assert "50 % of simulated items have a near-copy" in text and "of real" not in text
+
+
+def test_long_recordings_keep_a_real_share_of_every_recording():
+    rng = np.random.default_rng(25)
+    groups = np.repeat([f"r{k}" for k in range(12)], 120)
+    kept = gap._take(len(groups), groups, 500, rng)
+    assert len(kept) >= 12 * (500 // 12)  # 41 frames from each, not one

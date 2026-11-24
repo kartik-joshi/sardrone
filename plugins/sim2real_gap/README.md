@@ -27,12 +27,14 @@ search-and-rescue drone in simulation. Comparing 300 simulated frames with
 
 - **Separability 100.0 %** (permutation p = 0.0099, the smallest possible
   with 100 permutations), with the 15 simulated recordings kept whole in
-  every fold (`split_field="recording"`), and a Fréchet distance 0.596 above
-  the same-source baselines. The sets are trivially different, and a
-  detector trained on the simulated frames alone scored 0.01 mAP on the
-  real photos. (Without the split field the plugin warns that 27 % of the
-  simulated frames have a near-copy among them; the score is the same here
-  because the gap is so large.)
+  every fold (`split_field="recording"`), and a Fréchet distance
+  0.597 ± 0.008 above the same-source baselines. The sets are trivially
+  different, and a detector trained on the simulated frames alone scored
+  0.01 mAP on the real photos. (Without the split field the plugin warns
+  that 27 % of the simulated frames have a near-copy among them; the score
+  is the same here because the gap is so large. With only 15 recordings the
+  simulated sanity check is noisy, 28 to 65 % over five halvings, and the
+  report says so.)
 - **The real images least covered by the simulation**, top of the
   `s2r-uncovered-real` view, unprompted:
 
@@ -135,10 +137,10 @@ The core functions are plain Python too: `gap.measure(sim_view, real_view, ...)`
 | Separability | How easily a linear classifier tells the sets apart. 50 % = alike, 100 % = trivially different | 5-fold cross-validated balanced accuracy of logistic regression on normalised embeddings (a classifier two-sample test, Lopez-Paz and Oquab, ICLR 2017). Folds never split a cluster: an image's objects, or a recording given as the split field |
 | Spread across folds | How stable the score is between folds (not a confidence interval) | Standard deviation of the 5 fold scores |
 | Permutation p-value | Could this separability be chance? Small = no. Above 0.05 the verdict says "not significant" | The same test with shuffled set labels, 100 times (at most 500 items per set, an equal share from every cluster); with clusters, whole clusters are shuffled. Omitted, with a note, when a set has fewer than 5 clusters |
-| Sanity checks | Far from 50 % means the score is unreliable (often: few clusters, or near-duplicates split across the halves). Near 50 % is necessary, not sufficient: it does not detect near-duplicates between the sets' folds | The same test on two random halves of each set, whole clusters to each half; skipped, with a note, when a half has too few clusters |
-| Near-duplicate warning | Many items with a near-copy in their own set (video frames): give a split field | Share of items whose nearest neighbour in their own set is closer than cosine distance 0.02; shown when over 20 % and no split field is given |
+| Sanity checks | Far from 50 % means the score is unreliable (often: few clusters, or near-duplicates split across the halves). Near 50 % is necessary, not sufficient: it does not detect near-duplicates between the sets' folds | The same test on two random halves of each set, whole clusters to each half. With clusters, the mean and range over 5 halvings; flagged as noisy under 20 clusters, skipped with a note when a half is too small for 5 folds |
+| Near-duplicate warning | Many items with a near-copy in their own set (video frames): give a split field | Share of items whose nearest neighbour in their own set is closer than cosine distance 0.02, for each set whose items are not grouped by the split field; shown when 20 % or more |
 | Fréchet distance | A continuous size of the gap that keeps ranking when separability saturates at 100 % | Between Gaussians fitted to the two embedding sets, as in FID, on equal-sized random subsets (half the smaller set, stated in the report) |
-| Baselines and excess | How much of the Fréchet distance is just small-sample bias, and how much is the gap | The same distance between two halves of the simulated set, and of the real set, at the same size; the excess is the distance minus their mean. Compare runs by the excess |
+| Baselines and excess | How much of the Fréchet distance is just small-sample bias, and how much is the gap | The same distance between two halves of the simulated set, and of the real set, at the same size; the excess is the distance minus their mean, given as mean ± spread over 3 random draws. Compare runs by the excess, and treat differences within the spread as ties |
 | `s2r_realism` | Probability an item belongs to the real set | Out of fold: no item is scored by a classifier that saw it |
 | `s2r_nearest` | How far an item is from anything in the other set | Cosine distance to the nearest neighbour |
 | Breakdown | Which values of a field are closest to real | Groups of 50 or more are ranked, all at one common size (the smallest ranked group, at most half the real set), each score the mean of 3 subsamples, the Fréchet distance as its excess over a real-vs-real baseline. Smaller groups are listed with their mean realism but not ranked, so one rare value cannot make every comparison noisy. Missing values form their own group |
@@ -161,6 +163,10 @@ The core functions are plain Python too: `gap.measure(sim_view, real_view, ...)`
 - Small sets are noisy: with 20 images per side from one source,
   separability can land anywhere from about 30 % to 75 %. The report warns
   under 50 per side; rely on the permutation p-value there.
+- Embeddings with NaN or infinity are refused, with their ids, before any
+  maths runs (one such vector can make scipy hang).
+- A split field that groups nothing (empty, or one value per item) is
+  reported as such; True/False fields are not offered as split fields.
 - If the embedding map cannot be built, the report says why and every
   score, field and saved view is kept.
 - Each run replaces the previous run's fields and saved views for the same
@@ -170,6 +176,14 @@ The core functions are plain Python too: `gap.measure(sim_view, real_view, ...)`
 
 ## Changelog
 
+- **2.5.0**: fixes from a fifth review. NaN or infinite embeddings are
+  refused with their ids (one could hang scipy). Sanity checks on clustered
+  data are averaged over 5 halvings with their range, and flagged as noisy
+  with few clusters. The set-level Fréchet excess is the mean ± spread of 3
+  draws. A split field only counts where it groups items, the report no
+  longer claims clusters it does not have, and the near-duplicate check runs
+  for each set the split field does not group. True/False fields are not
+  offered as split fields.
 - **2.4.0**: fixes from a fourth review. Long recordings no longer crash
   the permutation test: the 500-item cap takes an equal share of every
   cluster instead of a few whole ones. Sanity halves get whole clusters,
