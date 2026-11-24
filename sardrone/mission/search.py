@@ -116,6 +116,10 @@ class SearchConfig:
     # None = same as the main search.
     second_pass_track_min_hits: int | None = None  # sightings before a track is acted on
     second_pass_confirm_min_frames: int | None = None  # frames in view during the orbit
+    # During the second pass only, act on a sighting only at or above this
+    # detector confidence (issue #5). For v4, 0.41 is where its precision
+    # reaches 90 % on validation frames under tree cover (not the test worlds).
+    second_pass_min_confidence: float | None = None
     rate_hz: float = 10.0
     reach_tolerance_m: float = 1.0
     arrive_speed_m_s: float = 0.5
@@ -345,7 +349,10 @@ class SearchRecorder(FlightRecorder):
     def _new_sightings(self) -> list[Sighting]:
         """Believed sightings of people not yet reported (and not recently rejected)."""
         fresh = []
+        floor = self.config.second_pass_min_confidence if self._in_second_pass else None
         for sighting in self._actionable:
+            if floor is not None and sighting.confidence < floor:
+                continue
             key = self._key(sighting)
             if key in self.confirmed or self.now_ns < self._rejected_until.get(key, 0):
                 continue
@@ -830,6 +837,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--device", default="mps")
     parser.add_argument("--second-pass", action="store_true",
                         help="after the search, fly a lower pass over the tree cover")  # fmt: skip
+    parser.add_argument("--second-pass-confidence", type=float,
+                        help="during the second pass, act only on sightings at or above this confidence")
     parser.add_argument("--strict-second-pass", action="store_true",
                         help="during the second pass, act on a track only after 6 sightings and "
                              "confirm only after 20 frames in view")  # fmt: skip
@@ -848,6 +857,7 @@ def main(argv: list[str] | None = None) -> int:
         config.second_pass_altitude_m = min(spec["altitude_m"], max(15.0, safe_confirm_altitude(spec, 10.0)))
         if args.strict_second_pass:
             config.second_pass_track_min_hits, config.second_pass_confirm_min_frames = 6, 20
+        config.second_pass_min_confidence = args.second_pass_confidence
     ground_z = -spec["drone_body_height_m"]
     meta = EpisodeMeta(
         world=spec["world"], weather=spec["weather"], time_of_day=spec["time_of_day"],

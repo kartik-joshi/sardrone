@@ -846,3 +846,20 @@ def test_strict_second_pass_ignores_flickering_ghosts_and_still_finds_people(tmp
     assert strict["search"]["second_pass"]["track_min_hits"] == 6
     assert strict["search"]["second_pass"]["confirm_min_frames"] == 20
     assert loose["search"]["second_pass"]["track_min_hits"] == 3
+
+
+def test_a_confidence_floor_in_the_second_pass_drops_unsure_ghosts(tmp_path):
+    # The ghosts come at confidence 0.5; the real people at 1.0 (issue #5).
+    floored = run_second_pass(tmp_path, "floor", second_pass_min_confidence=0.6)
+    assert floored["mission_metrics"]["false_reports"] == 0 and floored["mission_metrics"]["false_alarms"] == 0
+    assert floored["mission_metrics"]["people_found"] == 3
+    assert floored["transitions"].count("CONFIRM") == 3
+
+
+def test_the_batch_passes_the_confidence_floor_to_the_search(tmp_path):
+    from sardrone.batch import _search_command
+    from sardrone.worlds.matrix import VariationRow
+
+    row = VariationRow(id="test-001", world="forest_edge", seed=1)
+    command = _search_command(row, tmp_path, tmp_path / "x.mcap", False, "v4", True, False, 0.41)
+    assert command[-2:] == ["--second-pass-confidence", "0.41"] and "--second-pass" in command

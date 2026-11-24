@@ -115,7 +115,8 @@ def is_done(manifest: list[dict], episode_id: str, episode_dir: Path) -> bool:
 
 
 def _search_command(row: VariationRow, world_dir: Path, mcap: Path, fake: bool, detector: str = "oracle",
-                    second_pass: bool = False, strict: bool = False) -> list[str]:  # fmt: skip
+                    second_pass: bool = False, strict: bool = False,
+                    second_pass_confidence: float | None = None) -> list[str]:  # fmt: skip
     command = [
         sys.executable, "-m", "sardrone.mission.search",
         "--world-dir", str(world_dir), "--out", str(mcap), "--overwrite",
@@ -126,6 +127,8 @@ def _search_command(row: VariationRow, world_dir: Path, mcap: Path, fake: bool, 
         command += ["--second-pass"]
     if strict:
         command += ["--strict-second-pass"]
+    if second_pass_confidence is not None:
+        command += ["--second-pass-confidence", str(second_pass_confidence)]
     return command + (["--fake"] if fake else [])
 
 
@@ -139,6 +142,7 @@ def run_episode(
     detector: str = "oracle",
     second_pass: bool = False,
     strict: bool = False,
+    second_pass_confidence: float | None = None,
 ) -> EpisodeResult:
     """Generate the world and fly it. Never raises for an ordinary failure:
     the batch must survive one bad episode."""
@@ -161,7 +165,8 @@ def run_episode(
         with open(log_dir / "search.log", "w") as log:
             try:
                 done = subprocess.run(
-                    _search_command(row, paths.folder, mcap, fake, detector, second_pass, strict),
+                    _search_command(row, paths.folder, mcap, fake, detector, second_pass, strict,
+                                    second_pass_confidence),
                     cwd=PROJECT_ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=timeout_s,
                 )  # fmt: skip
             except subprocess.TimeoutExpired:
@@ -294,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
     )  # fmt: skip
     parser.add_argument("--second-pass", action="store_true", help="add a lower pass over tree cover")
     parser.add_argument("--strict-second-pass", action="store_true", help="stricter confirmation in that pass")
+    parser.add_argument("--second-pass-confidence", type=float, help="act in that pass only at this confidence")
     parser.add_argument("--ids", help="comma-separated episode ids to run")
     parser.add_argument("--timeout", type=float, default=900.0, help="seconds per episode")
     parser.add_argument("--max-attempts", type=int, default=2)
@@ -319,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_episode(
             row, episode_dir=args.episode_dir, world_root=args.world_root,
             timeout_s=args.timeout, fake=args.fake, detector=args.detector, second_pass=args.second_pass,
-            strict=args.strict_second_pass,
+            strict=args.strict_second_pass, second_pass_confidence=args.second_pass_confidence,
         )  # fmt: skip
 
     started = time.monotonic()
