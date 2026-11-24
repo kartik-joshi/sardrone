@@ -74,7 +74,10 @@ six times as many false alarms and 2.4 times the flight time
 ([table](docs/results/closed_loop_v4_second_pass.md)). A stricter version
 (6 sightings before a detour, 20 frames to confirm) found 10 of 15 with no
 false report and 8 false alarms
-([table](docs/results/closed_loop_v4_strict_second_pass.md)).
+([table](docs/results/closed_loop_v4_strict_second_pass.md)). A confidence floor
+for the low pass instead (0.41, chosen on validation frames) found only 9 of
+15: people under trees are seen at low confidence too
+([table](docs/results/closed_loop_v4_floor_second_pass.md)).
 
 **4. An off-the-shelf auto-labeller is a first draft, not a labeller.**
 Scored against exact simulator labels, OWLv2 reached 90 % precision at 77 %

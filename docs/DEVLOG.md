@@ -1577,3 +1577,28 @@ language model once the Cohere key's monthly limit resets.
 Limit found: PX4's simulated battery stops draining at 50 % by default
 (`SIM_BAT_MIN_PCT`), and every flight ended at exactly 50.0 %. Battery
 limits below 50 % cannot trigger in these flights without changing it.
+
+## Second pass with a confidence floor: no better (issue #5, 2026-11-24)
+
+Rule: during the low pass only, act on a sighting only at confidence 0.41
+or above. 0.41 was chosen on validation frames, not the test worlds: it is
+where v4's precision reaches 90 % on the 787 validation frames under tree
+cover (at the normal cut-off, 0.378, it is 88 %). Five forest_edge test
+worlds, v4, commit 2f9b9a7, one flight each (test-004 needed its retry: PX4
+not ready). Table: `docs/results/closed_loop_v4_floor_second_pass.md`.
+
+| Low-pass rule | Found | False reports | False alarms | Flight time |
+| --- | --- | --- | --- | --- |
+| no second pass | 9 / 15 | 0 | 3 | 1,440 s |
+| second pass, normal rules | 12 / 15 | 2 | 19 | 3,521 s |
+| strict: 6 sightings, 20 frames | 10 / 15 | 0 | 8 | 2,548 s |
+| confidence floor 0.41 | 9 / 15 | 0 | 14 | 2,961 s |
+
+- The floor found no more people than a single pass, at twice the flight
+  time, and lost a person the other rules found (test-003, 0 of 2).
+- My reading: people under trees are also seen at low confidence, so a
+  confidence bar removes them along with the canopy ghosts. Persistence
+  (the strict rule) separates them better than confidence does.
+- One flight per world: a difference of one person may be noise. But the
+  issue's bar (more than 10 of 15 with no false report) is not met; #5
+  stays open. A next try would combine persistence with a wider orbit.

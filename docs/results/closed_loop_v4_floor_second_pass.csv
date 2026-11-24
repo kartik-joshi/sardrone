@@ -1,0 +1,6 @@
+episode_id,world,time_of_day,altitude_m,occlusion,detector,people_placed,people_found,missed_rescues,false_reports,false_alarms,time_to_first_find_s,mean_report_error_m,coverage_percent,cte_mean_m,cte_max_m,ade_px,ade_coasting_px,duration_s,search_complete
+test-003,forest_edge,dusk,40,partial,yolo:v4,2,0,2,0,2,,,100.0,0.03,0.203,16.14,17.43,371.1,yes
+test-004,forest_edge,golden_hour,25,partial,yolo:v4,5,4,1,0,3,53.3,0.47,100.0,0.046,0.383,6.5,14.88,684.3,yes
+test-007,forest_edge,dusk,25,none,yolo:v4,5,4,1,0,1,46.4,0.7,100.0,0.035,0.176,6.22,27.01,624.3,yes
+test-012,forest_edge,noon,40,partial,yolo:v4,1,0,1,0,1,,,100.0,0.019,0.144,11.24,15.11,263.6,yes
+test-014,forest_edge,noon,25,partial,yolo:v4,2,1,1,0,7,52.2,0.54,100.0,0.039,0.23,8.34,15.12,1018.0,yes
