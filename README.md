@@ -289,8 +289,10 @@ v1.0 is complete; work continues. Each item is an issue in the
 6. **The agent:** 12 harder missions are written and scored for keyword
    rules (1 of 12); repeat runs, the newer model and model scores on the
    new set wait for the Cohere key's monthly limit to reset ([#6](https://github.com/kartik-joshi/sardrone/issues/6),
-   [#7](https://github.com/kartik-joshi/sardrone/issues/7)). Flying the simulated drone from a sentence ([#8](https://github.com/kartik-joshi/sardrone/issues/8)) is
-   built and being flown.
+   [#7](https://github.com/kartik-joshi/sardrone/issues/7)). ~~Flying the simulated drone from a sentence~~ Done
+   ([#8](https://github.com/kartik-joshi/sardrone/issues/8)): three PX4 flights with the keyword agent, two right and
+   the expected miss ("report anyone sitting"); the language-model flights
+   follow the limit reset.
 7. **Real drone video,** not only still photos. ([#9](https://github.com/kartik-joshi/sardrone/issues/9))
 8. **The whole pipeline** end to end with one command. ([#10](https://github.com/kartik-joshi/sardrone/issues/10))
 9. ~~**A FiftyOne plugin**~~ Done: [plugins/sim2real_gap](plugins/sim2real_gap)

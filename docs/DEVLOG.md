@@ -1537,3 +1537,43 @@ its hash, d741bdbb19fbe45d, exactly.
 - The retry logic treated that 429 like the per-minute limit and retried
   for about 7 minutes. Now a monthly-limit 429 stops at once with a clear
   error (tested).
+
+## The agent flies the simulated drone (issue #8, 2026-11-23)
+
+`sardrone/agent/flight.py` gives the agent's six tools a real (simulated)
+flight behind the mission simulator's interface, so the same agent loop
+flies PX4 in Gazebo and the flight is recorded as an MCAP episode with every
+decision on /events.
+
+- Areas are halves of the world square. The search runs while the model
+  thinks; get_status waits for about 20 % more coverage, a new sighting,
+  the end of the area or low battery. A pilot task always streams setpoints,
+  because PX4 leaves offboard mode without them. If the agent never comes
+  home, a safety return lands the drone.
+- Confirmed descriptions (clothing, pose) come from the world file entry of
+  the nearest person to the orbit's estimate. The detector finds people but
+  recognises neither; that is a stand-in for an attribute model.
+- Bugs found on the way: with the fake drone, the search task never yielded
+  to the event loop, so the agent's first call never returned (fixed: every
+  wait yields); and a dry run reported a south-field person on a
+  north-field mission, because the pitched camera sees beyond the searched
+  area (fixed: only sightings inside the area, 2 m margin, are queued).
+
+Three flights in PX4 + Gazebo, rule-based agent (keyword rules), oracle
+detector (the GPU was busy training), commit 3fc77af. Recordings in
+`data/agent_flights/` (not committed).
+
+| World | Mission | Right answer | Reported | |
+| --- | --- | --- | --- | --- |
+| test-002 | "Search the north field and report anyone you find." | person_1, 2, 3 | person_1, 2, 3 | right |
+| test-010 | "Search the east meadow and report anyone." | person_2 | person_2 | right |
+| test-006 | "Search the west woods. Report anyone sitting." | person_4 | person_1, 3, 4 | wrong |
+
+No false reports, no rejected tool calls, every flight home and landed, 2 to
+4 minutes each. The third is the expected failure: keyword rules ignore
+"sitting" and report everyone in the area. It is the mission to fly with a
+language model once the Cohere key's monthly limit resets.
+
+Limit found: PX4's simulated battery stops draining at 50 % by default
+(`SIM_BAT_MIN_PCT`), and every flight ended at exactly 50.0 %. Battery
+limits below 50 % cannot trigger in these flights without changing it.
