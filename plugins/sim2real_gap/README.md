@@ -17,6 +17,11 @@ Built for [sardrone](https://github.com/kartik-joshi/sardrone), a
 search-and-rescue drone in simulation, where these two checks explained why
 a detector trained on simulated images failed on real ones.
 
+![The embedding map in the FiftyOne App: simulated and real frames as separate islands](app_map.png)
+
+*The Embeddings panel after a run: 300 simulated frames (orange) and 300 real
+drone photos (red) from sardrone, coloured by `sim2real_domain`.*
+
 ## Install
 
 ```bash
@@ -36,6 +41,8 @@ Then, in the App, press the backtick key (`` ` ``) and run:
   Embeddings panel, choose the brain key and colour by `sim2real_domain`.
 - **Review false alarms:** pick the predictions and ground-truth fields.
   The App switches to the false alarms, most confident first.
+
+![The operator's result: 100 % separability, sanity checks near 50 %](app_operator.png)
 
 From Python:
 
