@@ -128,6 +128,7 @@ def test_split_comes_from_the_episode_id():
     assert [curate.split_of(f"train-{n:03d}") for n in (10, 20, 60)] == ["val"] * 3
     assert curate.split_of("dr-012") == "dr"
     assert curate.split_of("veh-004") == "veh"
+    assert curate.split_of("rich-004") == "rich"
     assert curate.split_of("pilot-003") == "pilot" and curate.split_of("pilot-meadow-search") == "pilot"
     # 60 training episodes: 6 for validation, 54 to train on.
     splits = [curate.split_of(f"train-{n:03d}") for n in range(1, 61)]
