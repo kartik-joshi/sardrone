@@ -237,8 +237,11 @@ The gain is largest where people are smallest (HERIDAL, 4000 px photos) and
 smaller on SARD (1920 px). It does not change the training story: on SARD
 the untrained v0, tiled, is still the best model (0.666). Tiling also
 raises more confident false alarms: at the scorecard cut-offs, chosen for
-untiled use, v6's precision on HERIDAL falls from 0.31 to 0.10. A cut-off
-for tiled use would have to be chosen on validation data; it has not been.
+untiled use, v6's precision on HERIDAL falls from 0.31 to 0.10. With
+cut-offs chosen on 294 real SARD photos that no model trained on, tiled and
+untiled detection perform alike on SARD, while on HERIDAL tiling finds
+about twice as many people (v6 recall 0.29 to 0.55) at lower precision
+(0.49 to 0.30). Source: `docs/results/tiled_cutoffs.csv`.
 
 ### Precision-recall curves
 
@@ -458,9 +461,9 @@ mission is unaffected because identity is decided from ground position.
 1. Separate the two causes in v8: train on all simulated frames with the
    real share held up, by using all 594 SARD pool images or repeating the
    300 to make 5 %, over several seeds.
-2. Choose a confidence cut-off for tiled detection on validation data:
-   tiling finds more people but, at the untiled cut-offs, raises more
-   false alarms (Finding 9).
+2. Choose cut-offs on validation photos that resemble the target footage:
+   a cut-off chosen on SARD-like photos trades recall for precision on
+   HERIDAL (Finding 9).
 3. Protect the head as well as the backbone: a lower learning rate, or
    freezing the neck, in simulation-only training.
 4. Widen the simulated content (more bodies, vegetation, terrain) before

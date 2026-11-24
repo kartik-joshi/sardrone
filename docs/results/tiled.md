@@ -28,7 +28,36 @@ See `sardrone/train/tiled.py`.
 | v7 | 0.498 | 0.541 | +0.043 (+0.033 to +0.053) | 100 % | 0.81 / 0.87 |
 | v8 | 0.483 | 0.514 | +0.030 (+0.021 to +0.038) | 100 % | 0.75 / 0.81 |
 
-Precision and recall at each model's scorecard cut-off are in `tiled.csv`. The
-cut-offs were chosen for untiled predictions; tiling produces more confident
-false alarms at those cut-offs (for example v6 on HERIDAL: precision 0.31
-untiled, 0.10 tiled). A cut-off for tiled use has not been chosen.
+Precision and recall at each model's scorecard cut-off are in `tiled.csv`.
+Those cut-offs were chosen for untiled predictions on simulated validation
+frames; at them, tiling raises more confident false alarms (v6 on HERIDAL:
+precision 0.31 untiled, 0.10 tiled).
+
+## Cut-offs chosen on real photos (`tiled_cutoffs.csv`, commit 08bf6e7)
+
+Each model's best-F1 cut-off, chosen separately for untiled and tiled
+detection on 294 SARD pool photos that no model trained on (the pool minus
+the 300 drawn by `export.py --add-real 300`, seed 51, re-drawn with the same
+call; the original export lists were deleted, so the exact match is assumed
+from the call being deterministic). The test sets only apply the cut-off.
+
+| Model | Method | Cut-off | Validation F1 | HERIDAL precision / recall | SARD test precision / recall |
+| --- | --- | --- | --- | --- | --- |
+| v0 | full | 0.029 | 0.47 | 0.30 / 0.23 | 0.65 / 0.59 |
+| v0 | tiled | 0.036 | 0.54 | 0.20 / 0.43 | 0.64 / 0.67 |
+| v4 | full | 0.295 | 0.82 | 0.40 / 0.33 | 0.67 / 0.62 |
+| v4 | tiled | 0.471 | 0.81 | 0.20 / 0.57 | 0.68 / 0.63 |
+| v6 | full | 0.368 | 0.83 | 0.49 / 0.29 | 0.68 / 0.62 |
+| v6 | tiled | 0.473 | 0.82 | 0.30 / 0.55 | 0.64 / 0.62 |
+| v7 | full | 0.179 | 0.81 | 0.32 / 0.35 | 0.52 / 0.66 |
+| v7 | tiled | 0.369 | 0.78 | 0.20 / 0.59 | 0.54 / 0.66 |
+| v8 | full | 0.052 | 0.74 | 0.19 / 0.45 | 0.49 / 0.62 |
+| v8 | tiled | 0.132 | 0.74 | 0.14 / 0.57 | 0.54 / 0.63 |
+
+On SARD, at these cut-offs, tiled and untiled detection perform about the
+same. On HERIDAL, where people are tiny, tiling finds about twice as many
+people (v6 recall 0.29 to 0.55, v4 0.33 to 0.57) at lower precision (v6 0.49
+to 0.30). A cut-off chosen on SARD-like photos is not ideal for HERIDAL
+either way: the photos differ (a linear classifier tells SARD from HERIDAL
+98 % of the time).
+

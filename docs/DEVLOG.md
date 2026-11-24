@@ -1475,3 +1475,44 @@ tiles at full resolution.
 - The cost: more confident false alarms at the old cut-offs (v6 on
   HERIDAL, precision 0.31 to 0.10). For a photo-triage tool that means
   more photos to look at; a tiled cut-off is the next step.
+
+## Cut-offs for tiled detection, chosen on real photos (2026-11-23)
+
+The scorecard cut-offs were chosen on simulated validation frames, for
+untiled detection. For a fair tiled-versus-untiled comparison both need a
+cut-off chosen on the same real photos.
+
+- Validation: the 294 SARD pool photos (767 people) that no model trained
+  on: the pool minus the 300 drawn by `export.py --add-real 300` with seed
+  51 (v4, v6, v7, v8 all used that draw). Re-drawn with the same call; the
+  original export lists were deleted in the disk cleanup, so the match is
+  assumed, not checked. No overlap with the SARD test set (checked).
+- Best-F1 cut-off per model and method; the test sets only apply it.
+  `docs/results/tiled_cutoffs.csv`, commit 08bf6e7, clean tree.
+
+| Model | Method | Cut-off | Validation F1 | HERIDAL precision / recall | SARD test precision / recall |
+| --- | --- | --- | --- | --- | --- |
+| v0 | full | 0.029 | 0.47 | 0.30 / 0.23 | 0.65 / 0.59 |
+| v0 | tiled | 0.036 | 0.54 | 0.20 / 0.43 | 0.64 / 0.67 |
+| v4 | full | 0.295 | 0.82 | 0.40 / 0.33 | 0.67 / 0.62 |
+| v4 | tiled | 0.471 | 0.81 | 0.20 / 0.57 | 0.68 / 0.63 |
+| v6 | full | 0.368 | 0.83 | 0.49 / 0.29 | 0.68 / 0.62 |
+| v6 | tiled | 0.473 | 0.82 | 0.30 / 0.55 | 0.64 / 0.62 |
+| v7 | full | 0.179 | 0.81 | 0.32 / 0.35 | 0.52 / 0.66 |
+| v7 | tiled | 0.369 | 0.78 | 0.20 / 0.59 | 0.54 / 0.66 |
+| v8 | full | 0.052 | 0.74 | 0.19 / 0.45 | 0.49 / 0.62 |
+| v8 | tiled | 0.132 | 0.74 | 0.14 / 0.57 | 0.54 / 0.63 |
+
+- SARD: tiled and untiled perform alike at their own cut-offs.
+- HERIDAL: tiling roughly doubles recall (v6 0.29 to 0.55, v4 0.33 to 0.57)
+  and lowers precision (v6 0.49 to 0.30). For search and rescue, where a
+  miss costs more than a false alarm, usually the right trade; but it is
+  a trade.
+- Side finding from the sim2real-gap plugin (issue #11): SARD and HERIDAL,
+  both real drone photos, are 98 % separable by a linear classifier on CLIP
+  embeddings, nearly as much as simulated against real (100 %). So a
+  cut-off chosen on one real dataset need not suit another, and
+  separability measures "looks different", not "is simulated".
+
+Also: rebuilding v1's training export from its recorded settings reproduced
+its hash, d741bdbb19fbe45d, exactly.

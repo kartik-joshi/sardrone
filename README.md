@@ -99,8 +99,9 @@ a paired interval above zero: +0.09 to +0.14 mAP@0.5 for all but the
 simulation-only v1 (+0.05). v6 went from 0.262 to
 0.364, the untrained v0 from 0.184 to 0.310. On SARD's smaller photos the
 gains are smaller (v0 0.591 to 0.666, v4 +0.024) and v6 does not change.
-The catch: at each model's existing cut-off, tiling also raises more false
-alarms; a cut-off for tiled use has not been chosen.
+The catch: it also raises more false alarms. With cut-offs chosen on 294
+real photos no model trained on, tiling on HERIDAL finds about twice as
+many people (v6 recall 0.29 to 0.55) at lower precision (0.49 to 0.30).
 [docs/results/tiled.md](docs/results/tiled.md)
 
 ## How it fits together
@@ -265,7 +266,7 @@ v1.0 is complete; work continues. Each item is an issue in the
 [v2 milestone](https://github.com/kartik-joshi/sardrone/milestone/1):
 
 1. ~~**Tiled detection** on full-resolution images.~~ Done: up to +0.14
-   mAP@0.5 on HERIDAL (finding 6). Next: a cut-off chosen for tiled use.
+   mAP@0.5 on HERIDAL (finding 6), with cut-offs chosen on real photos.
    ([#1](https://github.com/kartik-joshi/sardrone/issues/1))
 2. **Untangle v8:** more simulation, or a smaller real share? ([#2](https://github.com/kartik-joshi/sardrone/issues/2))
 3. **Protect more of the network** in simulation-only training. ([#3](https://github.com/kartik-joshi/sardrone/issues/3))
