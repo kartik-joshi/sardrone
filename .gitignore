@@ -19,6 +19,7 @@ data/overlays/
 .cache/
 data/real/
 data/closed_loop/
+data/agent_flights/
 
 # Personal notes and drafts, kept out of the public repo
 private/
