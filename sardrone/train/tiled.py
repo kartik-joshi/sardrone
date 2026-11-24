@@ -43,7 +43,7 @@ NMS_IOU = 0.5
 EDGE_PX = 2.0  # a box this close to an inner cut line counts as touching it
 
 DEFAULT_CSV = env.PROJECT_ROOT / "docs" / "results" / "tiled.csv"
-VIEWS = {"heridal": ("heridal", "heridal-test"), "sard": ("sard", "sard-test")}
+VIEWS = {"heridal": ("heridal", "heridal-test"), "sard": ("sard", "sard-test"), "wisard-vis": ("wisard-vis", "wisard-vis-test")}
 FIELDS = ["dataset", "version", "method", "images", "people", "confidence", "map50", "map50_low", "map50_high",
           "map50_95", "precision", "recall", "max_recall", "tile", "overlap", "commit", "dirty", "evaluated_utc"]  # fmt: skip
 
