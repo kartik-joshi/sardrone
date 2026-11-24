@@ -169,6 +169,8 @@ The core functions are plain Python too: `gap.measure(sim_view, real_view, ...)`
   reported as such; True/False fields are not offered as split fields.
 - If the embedding map cannot be built, the report says why and every
   score, field and saved view is kept.
+- The embedding map is saved as brain key `<prefix>_map` by default
+  (leave the field empty for no map).
 - Each run replaces the previous run's fields and saved views for the same
   prefix; use another prefix to keep both.
 - Set-level scores use at most 5,000 items per set (configurable); per-item
@@ -176,6 +178,11 @@ The core functions are plain Python too: `gap.measure(sim_view, real_view, ...)`
 
 ## Changelog
 
+- **2.6.0**: the per-set item cap is filled in full when recordings are of
+  uneven length (short ones give their share to long ones); groups whose
+  scores are within each other's spread are marked ≈ in the breakdown
+  instead of looking ranked; the embedding map's default brain key is
+  `<prefix>_map`, so runs with different prefixes keep their own maps.
 - **2.5.0**: fixes from a fifth review. NaN or infinite embeddings are
   refused with their ids (one could hang scipy). Sanity checks on clustered
   data are averaged over 5 halvings with their range, and flagged as noisy

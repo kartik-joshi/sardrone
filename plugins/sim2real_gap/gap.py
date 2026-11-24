@@ -132,9 +132,25 @@ def _take(n_items: int, groups, cap: int, rng) -> np.ndarray:
         return rng.choice(n_items, cap, replace=False)
     _, index = np.unique(np.asarray(groups, dtype=str), return_inverse=True)
     members = [rng.permutation(np.flatnonzero(index == c)) for c in rng.permutation(index.max() + 1)]
-    share = max(1, cap // len(members))
-    chosen = np.concatenate([m[:share] for m in members])
-    return chosen[:cap] if len(members) > cap else chosen
+    if len(members) >= cap:
+        return np.array([m[0] for m in members[:cap]])
+    # Water-filling: every cluster gets the same share, and what short clusters cannot use goes to
+    # the longer ones, so the cap is used in full (not just cap // clusters per cluster).
+    sizes = np.array([len(m) for m in members])
+    take = np.zeros_like(sizes)
+    left = cap
+    while left > 0:
+        open_ = np.flatnonzero(take < sizes)
+        if len(open_) == 0:
+            break
+        share = max(1, left // len(open_))
+        for k in open_:
+            extra = min(share, sizes[k] - take[k], left)
+            take[k] += extra
+            left -= extra
+            if left == 0:
+                break
+    return np.concatenate([m[:t] for m, t in zip(members, take)])
 
 
 def permutation_p_value(a: np.ndarray, b: np.ndarray, seed: int = 0, permutations: int = 100,
@@ -384,7 +400,7 @@ def frechet_with_baseline(a: np.ndarray, b: np.ndarray, n: int, seed: int = 0, g
 def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", model_name: str = DEFAULT_MODEL,
             patches_field: str | None = None, group_field: str | None = None, split_field: str | None = None,
             prefix: str = DEFAULT_PREFIX,
-            brain_key: str | None = "sim2real_gap", max_items: int | None = 5000, seed: int = 0,
+            brain_key: str | None = "auto", max_items: int | None = 5000, seed: int = 0,
             log=lambda message: None) -> dict:  # fmt: skip
     """Measure the gap between two views (from one dataset or two).
 
@@ -531,6 +547,8 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
         dataset.info[prefix] = summary
         dataset.save()
 
+    if brain_key == "auto":  # one map per prefix, so runs with different prefixes keep their own
+        brain_key = f"{prefix}_map"
     if same and brain_key:
         log("embedding map ...")
         try:
@@ -598,7 +616,20 @@ def groups(sim_view, real: np.ndarray, group_field: str, embeddings_field: str, 
                        frechet_excess_spread=round(float(np.std(excess)), 4))  # fmt: skip
         rows.append(row)
     big = float("inf")
-    return sorted(rows, key=lambda r: (not r["ranked"], r["separability"] or 0, r["frechet_excess"] or big))
+    rows = sorted(rows, key=lambda r: (not r["ranked"], r["separability"] or 0, r["frechet_excess"] or big))
+    # A ranked group is "tied" with the one above it when both scores are within their combined spreads:
+    # the order between them is then not meaningful.
+    for above, row in zip(rows, rows[1:]):
+        row["tied_with_previous"] = bool(
+            above["ranked"] and row["ranked"]
+            and abs(row["separability"] - above["separability"])
+            <= row.get("separability_spread", 0) + above.get("separability_spread", 0)
+            and abs(row["frechet_excess"] - above["frechet_excess"])
+            <= row.get("frechet_excess_spread", 0) + above.get("frechet_excess_spread", 0)
+        )
+    if rows:
+        rows[0]["tied_with_previous"] = False
+    return rows
 
 
 def save_views(sim_view, prefix: str, patches_field: str | None, sim_ids: list, real_ids: list) -> dict:

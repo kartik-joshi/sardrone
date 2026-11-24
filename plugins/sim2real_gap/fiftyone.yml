@@ -1,6 +1,6 @@
 name: "@kartik-joshi/sim2real-gap"
 description: How different are two image sets (e.g. simulated vs real), and which images make the difference? Separability, Frechet distance, per-sample realism scores, coverage gaps, per-condition breakdown, object-level mode, and a detector review
-version: "2.5.0"
+version: "2.6.0"
 url: https://github.com/kartik-joshi/sardrone/tree/main/plugins/sim2real_gap
 license: MIT
 fiftyone:

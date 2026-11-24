@@ -110,12 +110,16 @@ def report(summary: dict) -> str:
                 else "no group has enough items to rank")  # fmt: skip
         lines += ["", f"**Closest to real first** ({head}; groups under 50 items are listed, not ranked):", "",
                   "| Value | Items | Separability | Frechet excess | Mean realism |", "| --- | --- | --- | --- | --- |"]
+        if any(g.get("tied_with_previous") for g in summary["groups"]):
+            lines.insert(-2, "Rows marked ≈ are within the spread of the row above: their order is not meaningful.")
+            lines.insert(-2, "")
         for g in summary["groups"]:
             excess = "-" if g.get("frechet_excess") is None else \
                 f"{g['frechet_excess']:.3f} ± {g.get('frechet_excess_spread', 0):.3f}"
             sep = f"{pct(g['separability'])} ± {pct(g.get('separability_spread', 0))}" if g.get("ranked") \
                 else "too few to rank"
-            lines.append(f"| {g['value']} | {g['items']} | {sep} | {excess} | {pct(g.get('realism'))} |")
+            value = f"≈ {g['value']}" if g.get("tied_with_previous") else g["value"]
+            lines.append(f"| {value} | {g['items']} | {sep} | {excess} | {pct(g.get('realism'))} |")
     f = summary["fields"]
     lines += ["", f"Per-item fields: `{f['realism']}` (probability of looking real), "
               f"`{f['nearest']}` (distance to the nearest item of the other set), `{f['domain']}`."]  # fmt: skip
@@ -186,7 +190,8 @@ class MeasureSim2RealGap(foo.Operator):
                     description="E.g. a recording or episode id: its images never straddle a train/test fold. "
                     "Use it for video frames. At object level, each image's objects are always kept together")  # fmt: skip
         inputs.str("prefix", default="s2r", label="Field prefix")
-        inputs.str("brain_key", default="sim2real_gap", label="Brain key for the embedding map")
+        inputs.str("brain_key", default="auto", label="Brain key for the embedding map",
+                   description="auto = <prefix>_map; leave empty for no map")  # fmt: skip
         inputs.int("max_items", default=5000, min=50, label="Max items per set for the set-level scores")
         return types.Property(inputs)
 
@@ -214,7 +219,7 @@ class MeasureSim2RealGap(foo.Operator):
             group_field=ctx.params.get("group_field") or None,
             split_field=ctx.params.get("split_field") or None,
             prefix=ctx.params.get("prefix") or core.DEFAULT_PREFIX,
-            brain_key=ctx.params.get("brain_key") or None,
+            brain_key=ctx.params.get("brain_key", "auto") or None,
             max_items=ctx.params.get("max_items") or 5000,
             log=lambda m: ctx.set_progress(label=m) if hasattr(ctx, "set_progress") else None,
         )  # fmt: skip

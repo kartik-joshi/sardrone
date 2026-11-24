@@ -643,3 +643,30 @@ def test_long_recordings_keep_a_real_share_of_every_recording():
     groups = np.repeat([f"r{k}" for k in range(12)], 120)
     kept = gap._take(len(groups), groups, 500, rng)
     assert len(kept) >= 12 * (500 // 12)  # 41 frames from each, not one
+
+
+# ---- minor items from the fifth review ------------------------------------------
+
+
+def test_the_item_cap_is_used_in_full_when_clusters_are_uneven():
+    rng = np.random.default_rng(30)
+    groups = np.r_[np.repeat("big", 1000), np.repeat([f"r{k}" for k in range(10)], 1)]
+    kept = gap._take(len(groups), groups, 500, rng)
+    assert len(kept) == 500 and len(set(groups[kept])) == 11  # every cluster, and the cap filled
+
+
+def test_groups_marks_ties_on_real_runs(tiny):
+    for k, sample in enumerate(tiny.load_saved_view("sim")):
+        sample["half"] = "x" if k % 2 else "y"  # two halves of the same worlds: should tie
+        sample.save()
+    rng = np.random.default_rng(31)
+    real = gap.normalise(rng.normal(0, 1, (120, DIM)))
+    rows = gap.groups(tiny.load_saved_view("sim"), real, "half", "clip_embedding", None)
+    assert rows[0]["tied_with_previous"] is False and rows[1]["tied_with_previous"] is True
+
+
+def test_the_default_map_name_follows_the_prefix(tiny):
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), prefix="p1")
+    assert summary["brain_key"] == "p1_map"
+    gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), prefix="p2")
+    assert {"p1_map", "p2_map"} <= set(tiny.list_brain_runs())  # the second run kept the first map
