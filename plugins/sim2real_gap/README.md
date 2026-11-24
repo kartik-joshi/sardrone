@@ -26,9 +26,13 @@ search-and-rescue drone in simulation. Comparing 300 simulated frames with
 300 real drone photos (SARD):
 
 - **Separability 100.0 %** (permutation p = 0.0099, the smallest possible
-  with 100 permutations; sanity checks 45.7 % and 50.0 %): the sets are
-  trivially different, and a detector trained on the simulated frames alone
-  scored 0.01 mAP on the real photos.
+  with 100 permutations), with the 15 simulated recordings kept whole in
+  every fold (`split_field="recording"`), and a Fréchet distance 0.596 above
+  the same-source baselines. The sets are trivially different, and a
+  detector trained on the simulated frames alone scored 0.01 mAP on the
+  real photos. (Without the split field the plugin warns that 27 % of the
+  simulated frames have a near-copy among them; the score is the same here
+  because the gap is so large.)
 - **The real images least covered by the simulation**, top of the
   `s2r-uncovered-real` view, unprompted:
 
@@ -130,8 +134,9 @@ The core functions are plain Python too: `gap.measure(sim_view, real_view, ...)`
 | --- | --- | --- |
 | Separability | How easily a linear classifier tells the sets apart. 50 % = alike, 100 % = trivially different | 5-fold cross-validated balanced accuracy of logistic regression on normalised embeddings (a classifier two-sample test, Lopez-Paz and Oquab, ICLR 2017). Folds never split a cluster: an image's objects, or a recording given as the split field |
 | Spread across folds | How stable the score is between folds (not a confidence interval) | Standard deviation of the 5 fold scores |
-| Permutation p-value | Could this separability be chance? Small = no | The same test with shuffled set labels, 100 times (at most 500 items per set); with clusters, whole clusters are shuffled |
-| Sanity checks | Should be near 50 %; if not, the score is not trustworthy | The same test on two random halves of each set |
+| Permutation p-value | Could this separability be chance? Small = no. Above 0.05 the verdict says "not significant" | The same test with shuffled set labels, 100 times (at most 500 items per set, an equal share from every cluster); with clusters, whole clusters are shuffled. Omitted, with a note, when a set has fewer than 5 clusters |
+| Sanity checks | Far from 50 % means the score is unreliable (often: few clusters, or near-duplicates split across the halves). Near 50 % is necessary, not sufficient: it does not detect near-duplicates between the sets' folds | The same test on two random halves of each set, whole clusters to each half; skipped, with a note, when a half has too few clusters |
+| Near-duplicate warning | Many items with a near-copy in their own set (video frames): give a split field | Share of items whose nearest neighbour in their own set is closer than cosine distance 0.02; shown when over 20 % and no split field is given |
 | Fréchet distance | A continuous size of the gap that keeps ranking when separability saturates at 100 % | Between Gaussians fitted to the two embedding sets, as in FID, on equal-sized random subsets (half the smaller set, stated in the report) |
 | Baselines and excess | How much of the Fréchet distance is just small-sample bias, and how much is the gap | The same distance between two halves of the simulated set, and of the real set, at the same size; the excess is the distance minus their mean. Compare runs by the excess |
 | `s2r_realism` | Probability an item belongs to the real set | Out of fold: no item is scored by a classifier that saw it |
@@ -146,9 +151,11 @@ The core functions are plain Python too: `gap.measure(sim_view, real_view, ...)`
 - Near-duplicates make two sets look more different than they are:
   frames of one video, or several crops of one image, land on both sides of
   a fold and the classifier learns to recognise them. In a test with two
-  sets drawn from one source (60 images of 5 crops each, three seeds),
-  item-level folds scored 63 to 65 % with p = 0.0099 every time; keeping
-  images whole scored 42 to 54 % with p = 0.27 to 0.96. Object level
+  sets drawn from one source (60 images of 5 crops each, ten seeds),
+  item-level folds scored 62 to 71 % with p = 0.0099 every time; keeping
+  images whole scored 42 to 57 % with p = 0.10 to 0.94. The sanity checks
+  read near 50 % either way, so they do not catch this; the near-duplicate
+  warning does. Object level
   always keeps each image's objects together; for video, give the
   recording as the **split field**.
 - Small sets are noisy: with 20 images per side from one source,
@@ -163,6 +170,17 @@ The core functions are plain Python too: `gap.measure(sim_view, real_view, ...)`
 
 ## Changelog
 
+- **2.4.0**: fixes from a fourth review. Long recordings no longer crash
+  the permutation test: the 500-item cap takes an equal share of every
+  cluster instead of a few whole ones. Sanity halves get whole clusters,
+  balanced by size. Too few clusters skip the p-value or a sanity check
+  with a note instead of failing the run. The verdict says "not
+  significant" when p > 0.05; group scores show their spread across
+  subsamples. A near-duplicate warning when no split field is given. The
+  detector review works when the App already shows a patches view, and
+  counts predictions without a confidence. Two-dataset mode offers only
+  split fields both datasets have. The example is re-measured with its
+  recordings kept whole.
 - **2.3.0**: fixes from a third review. Object level computes embeddings
   only for the boxes that lack one and never overwrites existing ones; a
   re-run at object level clears the previous run's box scores (now declared,

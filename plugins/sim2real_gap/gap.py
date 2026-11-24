@@ -120,18 +120,24 @@ def _cluster_order(n: int, groups, rng) -> np.ndarray:
 
 
 def _take(n_items: int, groups, cap: int, rng) -> np.ndarray:
-    """At most `cap` items in random order, whole clusters at a time (at least one)."""
-    order = _cluster_order(n_items, groups, rng)
-    if n_items <= cap or groups is None:
-        return order[:cap]
-    g = np.asarray(groups, dtype=str)[order]
-    cluster = np.r_[True, g[1:] != g[:-1]].cumsum()  # 1, 1, 2, 3, 3, ... along the order
-    keep = max(1, int((np.cumsum(np.bincount(cluster)[1:]) <= cap).sum()))
-    return order[cluster <= keep]
+    """At most `cap` items, keeping as many clusters as possible: an equal
+    share of items from every cluster (a few frames from each recording),
+    not a few whole clusters. With more clusters than `cap`, one item from
+    each of `cap` random clusters."""
+    if n_items <= cap:
+        return rng.permutation(n_items)
+    if groups is None:
+        return rng.choice(n_items, cap, replace=False)
+    _, index = np.unique(np.asarray(groups, dtype=str), return_inverse=True)
+    members = [rng.permutation(np.flatnonzero(index == c)) for c in rng.permutation(index.max() + 1)]
+    share = max(1, cap // len(members))
+    chosen = np.concatenate([m[:share] for m in members])
+    return chosen[:cap] if len(members) > cap else chosen
 
 
 def permutation_p_value(a: np.ndarray, b: np.ndarray, seed: int = 0, permutations: int = 100,
                         cap: int = 500, groups_a=None, groups_b=None) -> float:  # fmt: skip
+    # Raises ValueError when either set has fewer clusters than folds.
     """p-value of the separability against shuffled set labels (at most `cap`
     items per set, for speed). The smallest possible value is
     1 / (permutations + 1): 0.0099 with 100. A large p means the score could
@@ -202,12 +208,20 @@ def random_halves(x: np.ndarray, seed: int = 0, groups=None):
     (half_a, half_b, groups_a, groups_b), whole clusters to one half each.
     (Odd/even frames of a video would score below 50 %: each frame's twin
     lands in the other half.)"""
-    order = _cluster_order(len(x), groups, np.random.default_rng(seed))
-    half = len(order) // 2
+    rng = np.random.default_rng(seed)
     if groups is None:
+        order = rng.permutation(len(x))
+        half = len(order) // 2
         return x[order[:half]], x[order[half:]]
     g = np.asarray(groups)
-    return x[order[:half]], x[order[half:]], g[order[:half]], g[order[half:]]
+    _, index = np.unique(g.astype(str), return_inverse=True)
+    sizes = np.bincount(index)
+    side, counts = np.zeros(len(sizes), int), [0, 0]
+    for c in rng.permutation(len(sizes)):  # each whole cluster to the half with fewer items so far
+        side[c] = int(counts[1] < counts[0])
+        counts[side[c]] += sizes[c]
+    first = side[index] == 0
+    return x[first], x[~first], g[first], g[~first]
 
 
 def subsample(n: int, cap: int | None, seed: int = 0) -> np.ndarray:
@@ -217,9 +231,31 @@ def subsample(n: int, cap: int | None, seed: int = 0) -> np.ndarray:
     return idx
 
 
-def verdict(score: float) -> str:
+NEAR_DUPLICATE = 0.02  # cosine distance under which two items count as near-duplicates
+
+
+def near_duplicate_share(sim: np.ndarray, real: np.ndarray) -> dict:
+    """Share of items whose nearest neighbour IN THEIR OWN SET is a
+    near-duplicate (e.g. the next frame of a video). Near-duplicates land on
+    both sides of a fold and inflate separability; the sanity checks cannot
+    see this. If the share is high, give a split field."""
+
+    def share(x):
+        if len(x) < 2:
+            return 0.0
+        sims = x @ x.T
+        np.fill_diagonal(sims, -1.0)
+        return round(float(np.mean(1.0 - sims.max(axis=1) < NEAR_DUPLICATE)), 4)
+
+    return {"sim": share(sim[:2000]), "real": share(real[:2000])}
+
+
+def verdict(score: float, p_value: float | None = None) -> str:
     # About the two SETS, not about simulation: two real datasets from
     # different cameras or terrain can be just as separable.
+    if p_value is not None and p_value > 0.05:
+        return (f"not significant (p = {p_value:.2f}): a separability of {100 * score:.0f} % "
+                "could be chance at this size; the sets may well be alike")  # fmt: skip
     if score >= 0.95:
         return "trivially separable: the two sets look very different; a model trained on one may not transfer to the other"
     if score >= 0.75:
@@ -280,6 +316,8 @@ def _clusters(view, owners: list, split_field: str | None, patches_field: str | 
     """A cluster id per item, or None if every item stands alone: the value of
     `split_field` (e.g. a recording), else at object level the sample a box
     came from. Folds, permutations and halves keep clusters whole."""
+    if split_field and not view.has_field(split_field):  # e.g. absent from the second dataset
+        return np.array([f"sample:{o}" for o in owners])
     if split_field:
         by_sample = dict(zip(view.values("id"), view.values(split_field)))
         return np.array([str(by_sample.get(o)) if by_sample.get(o) is not None else f"sample:{o}" for o in owners])
@@ -374,10 +412,23 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     n_fd = min(len(si), len(ri)) // 2
     fd = frechet_with_baseline(sim[si], real[ri], n_fd, seed, gs, gr)
 
-    def sanity(x, g):
+    notes = []
+
+    def sanity(x, g, which):
         halves = random_halves(x, seed, g)
-        return separability(halves[0], halves[1], seed, groups_a=halves[2], groups_b=halves[3]) if g is not None \
-            else separability(*halves, seed)
+        try:
+            value = separability(halves[0], halves[1], seed, groups_a=halves[2], groups_b=halves[3]) \
+                if g is not None else separability(*halves, seed)
+            return round(value[0], 4)
+        except ValueError:
+            notes.append(f"sanity check {which} skipped: too few clusters for {FOLDS} folds in each half")
+            return None
+
+    try:
+        p_value = round(permutation_p_value(sim[si], real[ri], seed, groups_a=gs, groups_b=gr), 4)
+    except ValueError as error:
+        p_value = None
+        notes.append(f"no permutation p-value: {error}")
     summary = {
         "level": "objects" if patches_field else "images",
         "patches_field": patches_field,
@@ -387,9 +438,10 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
         "real_items": len(real_ids),
         "separability": round(sep, 4),
         "separability_std": round(sep_std, 4),
-        "sanity_sim_vs_sim": round(sanity(sim[si], gs)[0], 4),
-        "sanity_real_vs_real": round(sanity(real[ri], gr)[0], 4),
-        "p_value": round(permutation_p_value(sim[si], real[ri], seed, groups_a=gs, groups_b=gr), 4),
+        "sanity_sim_vs_sim": sanity(sim[si], gs, "simulated vs simulated"),
+        "sanity_real_vs_real": sanity(real[ri], gr, "real vs real"),
+        "p_value": p_value,
+        "near_duplicates": None if cs is not None else near_duplicate_share(sim[si], real[ri]),
         "split_by": split_field or ("image" if patches_field else None),
         "clusters": None if cs is None else {"sim": len(set(gs)), "real": len(set(gr))},
         "frechet": fd["frechet"],
@@ -398,7 +450,8 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
         "frechet_excess": fd["excess"],
         "frechet_n": n_fd,
         "small_sets": min(len(si), len(ri)) < 50,
-        "verdict": verdict(sep),
+        "verdict": verdict(sep, p_value),
+        "notes": notes,
         "fields": {"domain": f"{prefix}_domain", "realism": f"{prefix}_realism", "nearest": f"{prefix}_nearest"},
     }
 
@@ -502,7 +555,9 @@ def groups(sim_view, real: np.ndarray, group_field: str, embeddings_field: str, 
                 rows.append(row)
                 continue
             row.update(n=n, ranked=True, separability=round(float(np.mean(seps)), 4),
-                       frechet_excess=round(float(np.mean(excess)), 4))  # fmt: skip
+                       separability_spread=round(float(np.std(seps)), 4),
+                       frechet_excess=round(float(np.mean(excess)), 4),
+                       frechet_excess_spread=round(float(np.std(excess)), 4))  # fmt: skip
         rows.append(row)
     big = float("inf")
     return sorted(rows, key=lambda r: (not r["ranked"], r["separability"] or 0, r["frechet_excess"] or big))
@@ -588,6 +643,8 @@ def review(view, pred_field: str, gt_field: str = "ground_truth", iou: float = 0
 
     from fiftyone import ViewField as F
 
+    if view._is_patches:  # e.g. the App still shows the previous review: go back to its images
+        view = view._root_dataset.select(view.distinct("sample_id"))
     eval_key = eval_key or "s2r_" + re.sub(r"[^A-Za-z0-9_]", "_", pred_field)
     dataset = view._dataset
     if eval_key in dataset.list_evaluations():
@@ -595,7 +652,10 @@ def review(view, pred_field: str, gt_field: str = "ground_truth", iou: float = 0
     view.evaluate_detections(pred_field, gt_field=gt_field, eval_key=eval_key, iou=iou)
     if kind == "misses":
         return view.filter_labels(gt_field, F(eval_key) == "fn").to_patches(gt_field)
-    wrong = view.filter_labels(pred_field, (F(eval_key) == "fp") & (F("confidence") >= min_confidence))
+    confident = F("confidence") >= min_confidence
+    if min_confidence <= 0:
+        confident = confident | ~F("confidence").exists()  # predictions without a confidence count too
+    wrong = view.filter_labels(pred_field, (F(eval_key) == "fp") & confident)
     return wrong.to_patches(pred_field).sort_by("confidence", reverse=True)
 
 

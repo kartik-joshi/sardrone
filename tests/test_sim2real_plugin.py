@@ -484,3 +484,91 @@ def test_the_app_offers_the_current_view_and_an_entire_dataset(tiny, tmp_path, m
         assert real2.count_values("e_domain") == {"real": 60} and tiny.count_values("e_domain")["sim"] == 120
     finally:
         fo.delete_dataset(other)
+
+
+# ---- fixes from the fourth review ------------------------------------------------
+
+
+def _recordings(rng, recordings, frames, shift=0.0):
+    """Video-like data: frames of one recording are near-copies of each other."""
+    centres = rng.normal(shift, 2.0, (recordings, DIM))
+    x = np.repeat(centres, frames, axis=0) + rng.normal(0, 0.05, (recordings * frames, DIM))
+    return gap.normalise(x), np.repeat([f"rec{k}" for k in range(recordings)], frames)
+
+
+def test_long_recordings_keep_every_recording_under_the_cap():
+    rng = np.random.default_rng(20)
+    _, groups = _recordings(rng, 12, 120)
+    kept = gap._take(len(groups), groups, 500, rng)
+    assert len(kept) <= 500 and len(set(groups[kept])) == 12  # a share of every recording, not 4 whole ones
+
+
+def test_the_p_value_works_with_long_recordings():
+    rng = np.random.default_rng(21)
+    a, ga = _recordings(rng, 12, 120)
+    b, gb = _recordings(rng, 12, 120)
+    p = gap.permutation_p_value(a, b, permutations=20, groups_a=ga, groups_b=gb)
+    assert 0 < p <= 1
+
+
+def test_sanity_halves_keep_unequal_clusters_whole():
+    rng = np.random.default_rng(22)
+    x = gap.normalise(rng.normal(0, 1, (600, DIM)))
+    groups = np.r_[np.repeat("big", 400), np.repeat([f"r{k}" for k in range(20)], 10)]
+    h1, h2, g1, g2 = gap.random_halves(x, 3, groups)
+    assert not set(g1) & set(g2) and len(h1) + len(h2) == 600
+
+
+def test_too_few_recordings_give_notes_not_a_crash(tiny):
+    for k, sample in enumerate(tiny.load_saved_view("sim")):
+        sample["recording"] = f"rec{k % 6}"  # 6 recordings: halves of 3 cannot make 5 folds
+        sample.save()
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), split_field="recording",
+                          brain_key=None)  # fmt: skip
+    assert summary["separability"] is not None and summary["sanity_sim_vs_sim"] is None
+    assert any("sanity check" in note for note in summary["notes"])
+
+
+def test_a_large_p_value_makes_the_verdict_not_significant():
+    assert gap.verdict(0.78, 0.4).startswith("not significant")
+    assert gap.verdict(0.78, 0.01).startswith("clearly separable")
+
+
+def test_near_duplicates_are_flagged_when_no_split_field_is_given():
+    rng = np.random.default_rng(23)
+    frames, _ = _recordings(rng, 10, 30)
+    photos = gap.normalise(rng.normal(0, 1, (300, DIM)))
+    share = gap.near_duplicate_share(frames, photos)
+    assert share["sim"] > 0.9 and share["real"] < 0.05
+
+
+def test_the_detector_review_runs_again_on_its_own_patches_view(tiny):
+    first = gap.review(tiny.view(), "predictions", min_confidence=0.3)
+    again = gap.review(first, "predictions", min_confidence=0.3)  # what the App passes on a second run
+    assert len(again) == len(first) == 200
+
+
+def test_false_alarms_without_a_confidence_count_at_zero(tiny):
+    sample = tiny.first()
+    sample.predictions.detections[1].confidence = None
+    sample.save()
+    assert len(gap.review(tiny.view(), "predictions", min_confidence=0.0)) == 200
+    assert len(gap.review(tiny.view(), "predictions", min_confidence=0.3)) == 199
+
+
+def test_a_split_field_missing_from_the_second_dataset_is_per_sample_there(tiny, tmp_path):
+    other = "s2r-plugin-test-nosplit"
+    if fo.dataset_exists(other):
+        fo.delete_dataset(other)
+    real2 = fo.Dataset(other)
+    rng = np.random.default_rng(24)
+    real2.add_samples([fo.Sample(filepath=_image(tmp_path / f"n_{i}.jpg"), clip_embedding=rng.normal(3.0, 1.0, DIM).tolist())
+                       for i in range(60)], progress=False)  # fmt: skip
+    for k, sample in enumerate(tiny.load_saved_view("sim")):
+        sample["recording"] = f"rec{k // 4}"
+        sample.save()
+    try:
+        summary = gap.measure(tiny.load_saved_view("sim"), real2.view(), split_field="recording", prefix="n")
+        assert summary["clusters"] == {"sim": 30, "real": 60}
+    finally:
+        fo.delete_dataset(other)
