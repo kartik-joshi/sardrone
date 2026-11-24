@@ -25,9 +25,10 @@ Built for [sardrone](https://github.com/kartik-joshi/sardrone), a
 search-and-rescue drone in simulation. Comparing 300 simulated frames with
 300 real drone photos (SARD):
 
-- **Separability 100.0 %** (± 0.0 % across folds; sanity checks 45.7 % and
-  50.0 %): the sets are trivially different, and a detector trained on the
-  simulated frames alone scored 0.01 mAP on the real photos.
+- **Separability 100.0 %** (permutation p = 0.0099, the smallest possible
+  with 100 permutations; sanity checks 45.7 % and 50.0 %): the sets are
+  trivially different, and a detector trained on the simulated frames alone
+  scored 0.01 mAP on the real photos.
 - **The real images least covered by the simulation**, top of the
   `s2r-uncovered-real` view, unprompted:
 
@@ -37,11 +38,12 @@ search-and-rescue drone in simulation. Comparing 300 simulated frames with
   of them exist in the simulated worlds, and cars were also the detector's
   most confident false alarms. That is the to-do list for the simulator.
 
-- **Object level** (person crops, 446 simulated vs 1,038 real): 97.5 %
-  separable and a Fréchet distance of 0.22, against 0.63 for whole images.
-  The simulated *people* are closer to real than the simulated *scenes*.
-  Real people the simulation never shows: in tall grass, on gravel, in
-  groups, next to vehicles.
+- **Object level** (person crops): compared at the same size as the whole
+  images, 300 per set over three seeds, the crops are 96 to 97 % separable
+  with a Fréchet distance of 0.22 to 0.23, against 100 % and 0.63 for whole
+  images. The simulated *people* are closer to real than the simulated
+  *scenes*. Real people the simulation never shows: in tall grass, on
+  gravel, in groups, next to vehicles.
 
 ![Real people least like any simulated person: in tall grass, on gravel, in groups](example_uncovered_people.jpg)
 
@@ -59,11 +61,17 @@ fiftyone plugins download https://github.com/kartik-joshi/sardrone/tree/main/plu
 ```
 
 ```bash
-pip install scikit-learn umap-learn scipy
+fiftyone plugins requirements @kartik-joshi/sim2real-gap --install
 ```
 
-Embeddings use the FiftyOne Model Zoo (CLIP ViT-B/32 by default, or DINOv2
-ViT-S/14), downloaded on first use. Existing embeddings are reused.
+That installs scikit-learn, umap-learn, scipy and torch. Embeddings use the
+FiftyOne Model Zoo (CLIP ViT-B/32 by default, or DINOv2 ViT-S/14), downloaded
+on first use; existing embeddings are reused. Computing embeddings for
+thousands of images takes a while: run the operator as a delegated operation
+(`fiftyone delegated launch`) rather than waiting in the App.
+
+The plugin is self-contained: it lives in the sardrone repository but needs
+nothing else from it.
 
 ## Use it in the App
 
@@ -115,12 +123,13 @@ Another dataset for the real set: add `"real_dataset": "my-real-dataset"`.
 | Output | Meaning | How it is computed |
 | --- | --- | --- |
 | Separability | How easily a linear classifier tells the sets apart. 50 % = alike, 100 % = trivially different | 5-fold cross-validated balanced accuracy of logistic regression on normalised embeddings (a classifier two-sample test, Lopez-Paz and Oquab, ICLR 2017) |
-| ± spread | How stable that is | Standard deviation across the folds |
+| Spread across folds | How stable the score is between folds (not a confidence interval) | Standard deviation of the 5 fold scores |
+| Permutation p-value | Could this separability be chance? Small = no | The same test with shuffled set labels, 100 times (at most 500 items per set) |
 | Sanity checks | Should be near 50 %; if not, the score is not trustworthy | The same test on two random halves of each set |
-| Fréchet distance | A continuous size of the gap that keeps ranking when separability saturates at 100 % | Between Gaussians fitted to the two embedding sets, as in FID. Biased by set size: compare runs of similar size |
+| Fréchet distance | A continuous size of the gap that keeps ranking when separability saturates at 100 % | Between Gaussians fitted to the two embedding sets, as in FID, on equal-sized random subsets. Biased by set size: compare runs only at the same size, which the report states |
 | `s2r_realism` | Probability an item belongs to the real set | Out of fold: no item is scored by a classifier that saw it |
 | `s2r_nearest` | How far an item is from anything in the other set | Cosine distance to the nearest neighbour |
-| Breakdown | Which values of a field are closest to real | Separability, Fréchet distance and mean realism per value |
+| Breakdown | Which values of a field are closest to real | Every group vs the real set at one common size, so groups are comparable; missing values form their own group |
 
 ## Good to know
 
@@ -129,13 +138,22 @@ Another dataset for the real set: add `"real_dataset": "my-real-dataset"`.
   data to see how much.
 - Frames from one video are near-duplicates. Split by recording, not by
   frame, or the sanity checks will come out below 50 %.
-- Small sets (under a few dozen per side) give noisy scores; the spread and
-  the sanity checks show how noisy.
+- Small sets are noisy: with 20 images per side from one source,
+  separability can land anywhere from about 30 % to 75 %. The report warns
+  under 50 per side; rely on the permutation p-value there.
+- Each run replaces the previous run's fields and saved views for the same
+  prefix; use another prefix to keep both.
 - Set-level scores use at most 5,000 items per set (configurable); per-item
   scores are written for every item.
 
 ## Changelog
 
+- **2.1.0**: fixes from an independent review. Saved views and fields no
+  longer mix in an earlier run's results; reviewing a second predictions
+  field no longer fails. Permutation p-value; Fréchet distance and group
+  comparisons at equal, stated sizes; missing group values kept; clear error
+  for mixed embedding sizes; float32 embeddings; two-dataset mode offers
+  only fields both datasets have; install via `fiftyone plugins requirements`.
 - **2.0.0**: per-sample and per-object realism and coverage scores, saved
   views, Fréchet distance, spread across folds, breakdown by any field,
   object level, two-dataset mode, DINOv2, a Markdown report, detector misses

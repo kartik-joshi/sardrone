@@ -40,7 +40,7 @@ FOLDS = 5
 
 
 def normalise(embeddings) -> np.ndarray:
-    x = np.asarray(embeddings, dtype=float)
+    x = np.asarray(embeddings, dtype=np.float32)  # half the memory of float64; plenty for cosine maths
     if x.ndim != 2 or len(x) == 0:
         raise ValueError("expected a non-empty 2-D array of embeddings")
     norms = np.linalg.norm(x, axis=1, keepdims=True)
@@ -79,6 +79,31 @@ def realism_scores(a: np.ndarray, b: np.ndarray, seed: int = 0, folds: int = FOL
     splitter = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
     p = cross_val_predict(_classifier(), x, y, cv=splitter, method="predict_proba")[:, 1]
     return p[: len(a)], p[len(a):]
+
+
+def permutation_p_value(a: np.ndarray, b: np.ndarray, seed: int = 0, permutations: int = 100,
+                        cap: int = 500) -> float:  # fmt: skip
+    """p-value of the separability against shuffled labels (at most `cap` items
+    per set, for speed). The smallest possible value is 1 / (permutations + 1):
+    0.0099 with 100. A large p means the score could be chance."""
+    from sklearn.model_selection import StratifiedKFold, permutation_test_score
+
+    rng = np.random.default_rng(seed)
+    a = a[rng.choice(len(a), min(cap, len(a)), replace=False)]
+    b = b[rng.choice(len(b), min(cap, len(b)), replace=False)]
+    x = np.vstack([a, b])
+    y = np.r_[np.zeros(len(a)), np.ones(len(b))]
+    splitter = StratifiedKFold(n_splits=FOLDS, shuffle=True, random_state=seed)
+    _, _, p = permutation_test_score(_classifier(), x, y, cv=splitter, n_permutations=permutations,
+                                     scoring="balanced_accuracy", random_state=seed)  # fmt: skip
+    return float(p)
+
+
+def equal_size(a: np.ndarray, b: np.ndarray, n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """Random subsets of exactly `n` items from each set. The Frechet distance
+    is biased by set size, so it is only comparable at equal, fixed sizes."""
+    rng = np.random.default_rng(seed)
+    return a[rng.choice(len(a), n, replace=False)], b[rng.choice(len(b), n, replace=False)]
 
 
 def frechet_distance(a: np.ndarray, b: np.ndarray) -> float:
@@ -164,9 +189,23 @@ def _items(view, field: str, patches_field: str | None):
                 if v is not None:
                     ids.append(i)
                     vecs.append(v)
-        return ids, (normalise(vecs) if vecs else np.zeros((0, 0)))
-    pairs = [(i, v) for i, v in zip(view.values("id"), view.values(field)) if v is not None]
-    return [i for i, _ in pairs], (normalise([v for _, v in pairs]) if pairs else np.zeros((0, 0)))
+    else:
+        pairs = [(i, v) for i, v in zip(view.values("id"), view.values(field)) if v is not None]
+        ids, vecs = [i for i, _ in pairs], [v for _, v in pairs]
+    sizes = {len(v) for v in vecs}
+    if len(sizes) > 1:
+        raise ValueError(f"field {field!r} holds embeddings of different sizes {sorted(sizes)}: "
+                         "it mixes models; use one embeddings field per model")  # fmt: skip
+    return ids, (normalise(vecs) if vecs else np.zeros((0, 0)))
+
+
+def clear_previous(dataset, prefix: str, patches_field: str | None) -> None:
+    """Remove the per-item results of an earlier run with this prefix, so that
+    fields, filters and saved views only ever show the latest run."""
+    for name in ("domain", "realism", "nearest"):
+        path = f"{patches_field}.detections.{prefix}_{name}" if patches_field else f"{prefix}_{name}"
+        if dataset.has_field(path):
+            dataset.set_field(path, None).save()
 
 
 def _write(view, ids: list, values, path: str, patches_field: str | None) -> None:
@@ -208,9 +247,14 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     if sim.shape[1] != real.shape[1]:
         raise ValueError(f"embedding sizes differ ({sim.shape[1]} vs {real.shape[1]}): use one model for both")
 
-    # Set-level scores on (at most) max_items per set, for speed.
+    for dataset in {sim_view._dataset.name: sim_view._dataset, real_view._dataset.name: real_view._dataset}.values():
+        clear_previous(dataset, prefix, patches_field)
+
+    # Set-level scores on (at most) max_items per set, for speed; the Frechet
+    # distance on equal-sized subsets, since it is biased by set size.
     si, ri = subsample(len(sim), max_items, seed), subsample(len(real), max_items, seed + 1)
-    log("separability, sanity checks, Frechet distance ...")
+    n_equal = min(len(si), len(ri))
+    log("separability, sanity checks, permutation test, Frechet distance ...")
     sep, sep_std = separability(sim[si], real[ri], seed)
     summary = {
         "level": "objects" if patches_field else "images",
@@ -223,7 +267,10 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
         "separability_std": round(sep_std, 4),
         "sanity_sim_vs_sim": round(separability(*random_halves(sim[si], seed), seed)[0], 4),
         "sanity_real_vs_real": round(separability(*random_halves(real[ri], seed), seed)[0], 4),
-        "frechet": round(frechet_distance(sim[si], real[ri]), 4),
+        "p_value": round(permutation_p_value(sim[si], real[ri], seed), 4),
+        "frechet": round(frechet_distance(*equal_size(sim[si], real[ri], n_equal, seed)), 4),
+        "frechet_n": n_equal,
+        "small_sets": n_equal < 50,
         "verdict": verdict(sep),
         "fields": {"domain": f"{prefix}_domain", "realism": f"{prefix}_realism", "nearest": f"{prefix}_nearest"},
     }
@@ -257,7 +304,7 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
                                    realism_by_id=realism_by_id)  # fmt: skip
 
     if same:
-        summary["views"] = save_views(sim_view, prefix, patches_field)
+        summary["views"] = save_views(sim_view, prefix, patches_field, sim_ids, real_ids)
         set_domain_colours(sim_view._dataset, f"{patches_field}.{prefix}_domain" if patches_field else f"{prefix}_domain")
         if brain_key:
             log("embedding map ...")
@@ -276,36 +323,45 @@ def groups(sim_view, real: np.ndarray, group_field: str, embeddings_field: str, 
     distance (which keeps ranking them) and by their mean realism score."""
     from fiftyone import ViewField as F
 
+    members = [(value, sim_view.match(F(group_field) == value)) for value in sorted(sim_view.distinct(group_field), key=str)]
+    missing = sim_view.match(~F(group_field).exists())
+    if len(missing):
+        members.append(("(none)", missing))
+    data = [(value, *_items(view, embeddings_field, patches_field)) for value, view in members]
+    # Every group is compared with the real set at ONE common size n, so their
+    # separability and Frechet distance are comparable with each other.
+    eligible = [len(x) for _, _, x in data if len(x) >= min_items]
+    n = min(eligible + [len(real)]) if eligible else 0
     rows = []
-    for value in sorted(sim_view.distinct(group_field), key=str):
-        ids, x = _items(sim_view.match(F(group_field) == value), embeddings_field, patches_field)
-        row = {"value": value, "items": len(x), "separability": None, "frechet": None, "realism": None}
+    for k, (value, ids, x) in enumerate(data):
+        row = {"value": value, "items": len(x), "n": None, "separability": None, "frechet": None, "realism": None}
         if realism_by_id:
             scores = [realism_by_id[i] for i in ids if i in realism_by_id]
             row["realism"] = round(float(np.mean(scores)), 4) if scores else None
-        if len(x) >= min_items:
-            sep, std = separability(x, real, seed)
-            row.update(separability=round(sep, 4), std=round(std, 4), frechet=round(frechet_distance(x, real), 4))
+        if len(x) >= min_items and n >= min_items:
+            xs, rs = equal_size(x, real, n, seed + k)
+            sep, std = separability(xs, rs, seed)
+            row.update(n=n, separability=round(sep, 4), std=round(std, 4), frechet=round(frechet_distance(xs, rs), 4))
         rows.append(row)
     big = float("inf")
     return sorted(rows, key=lambda r: (r["separability"] is None, r["separability"] or 0, r["frechet"] or big))
 
 
-def save_views(sim_view, prefix: str, patches_field: str | None) -> dict:
-    """The two views you will want, saved on the dataset."""
+def save_views(sim_view, prefix: str, patches_field: str | None, sim_ids: list, real_ids: list) -> dict:
+    """The two views you will want, saved on the dataset. Built from THIS run's
+    items only (earlier runs' results are cleared first, too)."""
     from fiftyone import ViewField as F
 
     dataset = sim_view._dataset
     names = {"realistic_sim": f"{prefix}-realistic-sim", "uncovered_real": f"{prefix}-uncovered-real"}
     if patches_field:
-        patches = dataset.to_patches(patches_field)
-        sim_p = patches.match(F(f"{patches_field}.{prefix}_domain") == "sim")
-        real_p = patches.match(F(f"{patches_field}.{prefix}_domain") == "real")
+        sim_p = dataset.select_labels(ids=sim_ids, fields=patches_field).to_patches(patches_field)
+        real_p = dataset.select_labels(ids=real_ids, fields=patches_field).to_patches(patches_field)
         realistic = sim_p.sort_by(F(f"{patches_field}.{prefix}_realism"), reverse=True)
         uncovered = real_p.sort_by(F(f"{patches_field}.{prefix}_nearest"), reverse=True)
     else:
-        realistic = dataset.match(F(f"{prefix}_domain") == "sim").sort_by(f"{prefix}_realism", reverse=True)
-        uncovered = dataset.match(F(f"{prefix}_domain") == "real").sort_by(f"{prefix}_nearest", reverse=True)
+        realistic = dataset.select(sim_ids).sort_by(f"{prefix}_realism", reverse=True)
+        uncovered = dataset.select(real_ids).sort_by(f"{prefix}_nearest", reverse=True)
     dataset.save_view(names["realistic_sim"], realistic, overwrite=True)
     dataset.save_view(names["uncovered_real"], uncovered, overwrite=True)
     return names
@@ -350,13 +406,22 @@ def embedding_map(sim_view, real_view, embeddings_field: str, patches_field: str
 # ---- detector review --------------------------------------------------------------
 
 
-def review(view, pred_field: str, gt_field: str = "ground_truth", iou: float = 0.5, eval_key: str = "s2r_eval",
+def review(view, pred_field: str, gt_field: str = "ground_truth", iou: float = 0.5, eval_key: str | None = None,
            min_confidence: float = 0.0, kind: str = "false_alarms"):  # fmt: skip
     """A patches view, worst first, using FiftyOne's own matching:
     kind="false_alarms": predictions that match no ground truth, most confident first;
-    kind="misses": ground-truth objects that no prediction found."""
+    kind="misses": ground-truth objects that no prediction found.
+
+    The evaluation is stored under `eval_key` (default: s2r_<pred field>), one
+    per predictions field, and replaced when that field is reviewed again."""
+    import re
+
     from fiftyone import ViewField as F
 
+    eval_key = eval_key or "s2r_" + re.sub(r"[^A-Za-z0-9_]", "_", pred_field)
+    dataset = view._dataset
+    if eval_key in dataset.list_evaluations():
+        dataset.delete_evaluation(eval_key)
     view.evaluate_detections(pred_field, gt_field=gt_field, eval_key=eval_key, iou=iou)
     if kind == "misses":
         return view.filter_labels(gt_field, F(eval_key) == "fn").to_patches(gt_field)
@@ -365,6 +430,6 @@ def review(view, pred_field: str, gt_field: str = "ground_truth", iou: float = 0
 
 
 def false_alarms(view, pred_field: str, gt_field: str = "ground_truth", iou: float = 0.5,
-                 eval_key: str = "s2r_eval", min_confidence: float = 0.0):  # fmt: skip
+                 eval_key: str | None = None, min_confidence: float = 0.0):  # fmt: skip
     """Kept for compatibility: review(..., kind="false_alarms")."""
     return review(view, pred_field, gt_field, iou, eval_key, min_confidence, "false_alarms")

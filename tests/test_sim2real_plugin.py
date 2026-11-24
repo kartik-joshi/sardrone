@@ -243,3 +243,60 @@ def test_domain_colours_are_set_once_and_never_override_the_user(tiny):
     gap.set_domain_colours(tiny, "s2r_domain")
     paths = [f["path"] for f in tiny.app_config.color_scheme.fields]
     assert paths == ["mine", "s2r_domain"]  # the user's entry is kept
+
+
+# ---- regression tests for the independent review's findings ----------------------
+
+
+def test_a_second_run_replaces_the_first_runs_results_and_views(tiny):
+    F = fo.ViewField
+    real = tiny.load_saved_view("real")
+    gap.measure(tiny.match(F("world") == "A"), real, brain_key=None)
+    gap.measure(tiny.match(F("world") == "B"), real, brain_key=None)
+    realistic = tiny.load_saved_view("s2r-realistic-sim")
+    assert set(realistic.values("world")) == {"B"}  # world A's samples are gone
+    assert tiny.count_values("s2r_domain") == {"sim": 30, "real": 40, None: 30}  # A's scores cleared too
+
+
+def test_reviewing_two_prediction_fields_works_and_keeps_one_evaluation_each(tiny):
+    for sample in tiny:
+        sample["predictions2"] = sample["predictions"].copy()
+        sample.save()
+    gap.review(tiny.view(), "predictions")
+    gap.review(tiny.view(), "predictions2")
+    gap.review(tiny.view(), "predictions")  # again: replaced, not an error
+    assert sorted(tiny.list_evaluations()) == ["s2r_predictions", "s2r_predictions2"]
+
+
+def test_groups_are_compared_at_one_common_size(tiny):
+    F = fo.ViewField
+    sim = tiny.load_saved_view("sim")
+    sim.match(F("world") == "B").limit(12).set_field("world", "B-small").save()  # unequal group sizes
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), group_field="world",
+                          brain_key=None)  # fmt: skip
+    sizes = {g["n"] for g in summary["groups"] if g["n"]}
+    assert sizes == {12}  # every group vs real at the same n
+
+
+def test_missing_group_values_form_their_own_group(tiny):
+    F = fo.ViewField
+    tiny.load_saved_view("sim").match(F("world") == "A").limit(15).set_field("world", None).save()
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), group_field="world",
+                          brain_key=None)  # fmt: skip
+    assert "(none)" in [g["value"] for g in summary["groups"]]
+
+
+def test_p_value_and_equal_size_frechet_are_reported(tiny):
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), brain_key=None)
+    assert summary["p_value"] < 0.05 and summary["frechet_n"] == 40
+    rng = np.random.default_rng(9)
+    same = rng.normal(0, 1, (60, DIM))
+    assert gap.permutation_p_value(same[:30], same[30:]) > 0.05  # one distribution: not significant
+
+
+def test_mixed_embedding_sizes_give_a_clear_error(tiny):
+    first = tiny.first()
+    first["clip_embedding"] = list(range(8))
+    first.save()
+    with pytest.raises(ValueError, match="different sizes"):
+        gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), brain_key=None)

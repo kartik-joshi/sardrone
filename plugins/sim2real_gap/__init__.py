@@ -48,19 +48,26 @@ def report(summary: dict) -> str:
     """The run as Markdown, for the App and for logs."""
     level = "objects" if summary["level"] == "objects" else "images"
     lines = [
-        f"### Separability: **{pct(summary['separability'])}** (± {pct(summary['separability_std'])} across folds)",
+        f"### Separability: **{pct(summary['separability'])}** "
+        f"(spread across folds ± {pct(summary['separability_std'])}; permutation p = {summary['p_value']:.3f})",
         f"_{summary['verdict']}_",
         "",
         "| Check | Value |",
         "| --- | --- |",
         f"| Sanity: simulated vs simulated | {pct(summary['sanity_sim_vs_sim'])} (should be near 50 %) |",
         f"| Sanity: real vs real | {pct(summary['sanity_real_vs_real'])} (should be near 50 %) |",
-        f"| Frechet distance ({summary['model']}) | {summary['frechet']:.3f} |",
+        f"| Frechet distance ({summary['model']}) | {summary['frechet']:.3f} at {summary['frechet_n']} per set "
+        "(biased by set size: compare runs at the same size) |",
         f"| {level.capitalize()}: simulated / real | {summary['sim_items']} / {summary['real_items']} |",
         f"| Mean realism of simulated {level} | {pct(summary['realism_sim_mean'])} |",
     ]
+    if summary.get("small_sets"):
+        lines += ["", f"**Small sets** ({summary['frechet_n']} per side): scores are noisy; "
+                  "trust the permutation p-value more than the percentage."]  # fmt: skip
     if summary.get("groups"):
-        lines += ["", "**Closest to real first** (by separability, then Frechet distance):", "",
+        n = next((g["n"] for g in summary["groups"] if g.get("n")), None)
+        lines += ["", f"**Closest to real first** (each group vs the real set at {n} items each, "
+                  "by separability, then Frechet distance):", "",
                   "| Value | Items | Separability | Frechet | Mean realism |", "| --- | --- | --- | --- | --- |"]
         lines += [f"| {g['value']} | {g['items']} | {pct(g['separability'])} | "
                   f"{'-' if g.get('frechet') is None else format(g['frechet'], '.3f')} | {pct(g.get('realism'))} |"
@@ -110,8 +117,10 @@ class MeasureSim2RealGap(foo.Operator):
         inputs.enum("level", ["images", "objects"], default="images", label="Compare",
                     description="Whole images, or object crops from a detections field")  # fmt: skip
         if ctx.params.get("level") == "objects":
-            inputs.enum("patches_field", _detection_fields(ctx.dataset), label="Objects (detections field)",
-                        required=True)  # fmt: skip
+            fields = _detection_fields(ctx.dataset)
+            if other != ctx.dataset.name and other in datasets:  # must exist in both datasets
+                fields = sorted(set(fields) & set(_detection_fields(fo.load_dataset(other))))
+            inputs.enum("patches_field", fields, label="Objects (detections field)", required=True)
 
         core = _core()
         inputs.enum("model", list(core.MODELS), default=core.DEFAULT_MODEL, label="Embedding model")
