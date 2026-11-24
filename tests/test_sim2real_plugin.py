@@ -344,3 +344,143 @@ def test_object_mode_builds_its_map_from_undeclared_embedding_attributes(tiny):
     summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), embeddings_field="crop_vec",
                           patches_field="ground_truth", prefix="obj", brain_key="obj_map")  # fmt: skip
     assert summary.get("map_error") is None and summary["brain_key"] == "obj_map"
+
+
+# ---- fixes from the third review -------------------------------------------------
+
+
+def test_only_objects_without_an_embedding_are_computed(tiny, monkeypatch):
+    import fiftyone.core.collections as foc
+    import fiftyone.zoo as foz
+
+    for sample in tiny:
+        for det in sample.ground_truth.detections:
+            det["vec"] = [1.0] * 16
+        sample.save()
+    first = tiny.first()
+    first.ground_truth.detections[0]["vec"] = None
+    first.save()
+    seen = {}
+
+    def fake(self, model, patches_field, embeddings_field=None, **kwargs):
+        seen["labels"] = self.count(f"{patches_field}.detections")
+
+    monkeypatch.setattr(foz, "load_zoo_model", lambda name: object())
+    monkeypatch.setattr(foc.SampleCollection, "compute_patch_embeddings", fake)
+    gap.ensure_embeddings(tiny.view(), "vec", patches_field="ground_truth")
+    assert seen["labels"] == 1  # only the one box without an embedding, not all 200
+    others = [v for boxes in tiny.values("ground_truth.detections.vec") for v in boxes if v is not None]
+    assert len(others) == 199 and all(len(v) == 16 for v in others)  # nothing overwritten
+
+
+def test_an_object_level_rerun_clears_the_previous_runs_box_scores(tiny):
+    F = fo.ViewField
+    rng = np.random.default_rng(13)
+    for sample in tiny:
+        for det in sample.ground_truth.detections:
+            det["obj_vec"] = rng.normal(3.0 if "real" in sample.tags else -1.0, 1.0, DIM).tolist()
+        sample.save()
+    kwargs = {"embeddings_field": "obj_vec", "patches_field": "ground_truth", "prefix": "o", "brain_key": None}
+    gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), **kwargs)
+    world_a = tiny.load_saved_view("sim").match(F("world") == "A")
+    gap.measure(world_a, tiny.load_saved_view("real"), **kwargs)
+    world_b = tiny.load_saved_view("sim").match(F("world") == "B")
+    assert set(v for boxes in world_b.values("ground_truth.detections.o_domain") for v in boxes) == {None}
+    assert tiny.has_field("ground_truth.detections.o_realism")  # declared, so the App can filter by it
+
+
+def test_scores_left_by_an_older_version_are_cleared_too(tiny):
+    ids = [i for boxes in tiny.values("ground_truth.detections.id") for i in boxes]
+    tiny.set_label_values("ground_truth.detections.old_domain", {ids[0]: "sim"})  # undeclared, as 2.2 wrote it
+    assert not tiny.has_field("ground_truth.detections.old_domain")
+    gap.clear_previous(tiny, "old", "ground_truth")
+    assert tiny.count("ground_truth.detections.old_domain") == 0
+
+
+def _clustered(rng, images, per_image, offset_scale=2.0):
+    """Crops from `images` images: crops of one image share that image's offset."""
+    offsets = rng.normal(0, offset_scale, (images, DIM))
+    x = np.repeat(offsets, per_image, axis=0) + rng.normal(0, 0.3, (images * per_image, DIM))
+    return gap.normalise(x), np.repeat(np.arange(images), per_image)
+
+
+def test_clustered_items_do_not_make_one_distribution_look_separable():
+    rng = np.random.default_rng(14)
+    a, ga = _clustered(rng, 60, 5)
+    b, gb = _clustered(rng, 60, 5)  # the SAME distribution, 5 crops per image
+    leaky = gap.separability(a, b)[0]
+    grouped = gap.separability(a, b, groups_a=ga, groups_b=gb)[0]
+    assert leaky > 0.6  # crops of one image on both sides of a fold: looks separable
+    assert grouped < 0.56  # images kept whole: about chance
+    assert gap.permutation_p_value(a, b, permutations=30, groups_a=ga, groups_b=gb) > 0.05
+    halves = gap.random_halves(a, 0, ga)
+    assert not set(halves[2]) & set(halves[3])  # no image in both halves
+
+
+def test_clusters_still_find_a_real_gap():
+    rng = np.random.default_rng(15)
+    a, ga = _clustered(rng, 40, 5)
+    b, gb = _clustered(rng, 40, 5)
+    b = gap.normalise(b + 0.4)
+    assert gap.separability(a, b, groups_a=ga, groups_b=gb)[0] > 0.9
+    assert gap.permutation_p_value(a, b, permutations=30, groups_a=ga, groups_b=gb) < 0.05
+
+
+def test_object_level_keeps_each_images_boxes_together(tiny):
+    rng = np.random.default_rng(16)
+    for sample in tiny:  # two boxes per image, so images are clusters
+        sample.ground_truth.detections.append(fo.Detection(label="person", bounding_box=[0.5, 0.5, 0.2, 0.2]))
+        for det in sample.ground_truth.detections:
+            det["v2"] = rng.normal(3.0 if "real" in sample.tags else -1.0, 1.0, DIM).tolist()
+        sample.save()
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), embeddings_field="v2",
+                          patches_field="ground_truth", prefix="c", brain_key=None)  # fmt: skip
+    assert summary["split_by"] == "image" and summary["clusters"] == {"sim": 120, "real": 80}
+
+
+def test_a_split_field_keeps_recordings_together(tiny):
+    for k, sample in enumerate(tiny):
+        sample["recording"] = f"rec{k // 4}"  # 4 frames per recording
+        sample.save()
+    summary = gap.measure(tiny.load_saved_view("sim"), tiny.load_saved_view("real"), split_field="recording",
+                          brain_key=None)  # fmt: skip
+    assert summary["split_by"] == "recording" and summary["clusters"] == {"sim": 30, "real": 20}
+
+
+def test_patches_views_are_refused_early(tiny):
+    patches = tiny.load_saved_view("sim").to_patches("ground_truth")
+    with pytest.raises(ValueError, match="whole images"):
+        gap.measure(patches, tiny.load_saved_view("real"), brain_key=None)
+
+
+def test_the_app_offers_the_current_view_and_an_entire_dataset(tiny, tmp_path, monkeypatch):
+    import types as pytypes
+
+    import fiftyone.operators as foo
+
+    monkeypatch.setattr(fo.config, "plugins_dir", str(PLUGIN_DIR))
+    plugin = importlib.util.spec_from_file_location("s2r_init", PLUGIN_DIR / "sim2real_gap" / "__init__.py")
+    module = importlib.util.module_from_spec(plugin)
+    plugin.loader.exec_module(module)
+    other = "s2r-plugin-test-entire"
+    if fo.dataset_exists(other):
+        fo.delete_dataset(other)
+    real2 = fo.Dataset(other)  # no saved views at all
+    rng = np.random.default_rng(17)
+    real2.add_samples([fo.Sample(filepath=_image(tmp_path / f"e_{i}.jpg"), clip_embedding=rng.normal(3.0, 1.0, DIM).tolist())
+                       for i in range(60)], progress=False)  # fmt: skip
+    try:
+        ctx = pytypes.SimpleNamespace(dataset=tiny, view=tiny.view(), params={"real_dataset": other})
+        form = str(module.MeasureSim2RealGap().resolve_input(ctx).to_json())
+        assert module.CURRENT_VIEW in form and module.ENTIRE_DATASET in form
+        assert "s2r-uncovered-real" not in form  # the plugin's own results are not offered as inputs
+        result = foo.execute_operator(
+            "@kartik-joshi/sim2real-gap/measure_sim2real_gap",
+            ctx={"dataset": tiny, "view": tiny.load_saved_view("sim"),
+                 "params": {"sim_view": module.CURRENT_VIEW, "real_dataset": other,
+                            "real_view": module.ENTIRE_DATASET, "prefix": "e"}},
+        )  # fmt: skip
+        assert result.error is None, result.error
+        assert real2.count_values("e_domain") == {"real": 60} and tiny.count_values("e_domain")["sim"] == 120
+    finally:
+        fo.delete_dataset(other)

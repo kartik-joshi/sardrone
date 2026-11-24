@@ -39,9 +39,10 @@ search-and-rescue drone in simulation. Comparing 300 simulated frames with
   most confident false alarms. That is the to-do list for the simulator.
 
 - **Object level** (person crops): at the same size as the whole images
-  (150 per set, three seeds), the crops are 95 to 98 % separable with a
-  Fréchet gap of 0.19 to 0.20 above the same-source baselines, against
-  100 % and 0.61 for whole images (baselines 0.03 to 0.06 in both cases).
+  (150 per set, three seeds, each image's crops kept in one fold), the
+  crops are 95 to 97 % separable with a Fréchet gap of about 0.20 above the
+  same-source baselines, against 100 % and 0.61 for whole images
+  (baselines 0.03 to 0.07).
   The simulated *people* are closer to real than the simulated *scenes*. Real people the simulation never shows: in tall grass, on
   gravel, in groups, next to vehicles.
 
@@ -75,11 +76,13 @@ nothing else from it.
 
 ## Use it in the App
 
-1. Save a view of each set (e.g. by tag), or keep the real images in another
-   dataset.
+1. Show the simulated images (the current view) or save a view of them, and
+   save a view of the real ones; or keep the real images in another dataset
+   and use all of it (**(entire dataset)**).
 2. Press the backtick key (`` ` ``) and run **Measure the sim-to-real gap**:
    pick the two sets, images or objects, a model, and optionally a field to
-   break down by.
+   break down by and a field to keep together (a recording or episode id,
+   for video frames).
 3. Read the report:
 
    ![The report: separability with its spread, sanity checks, Frechet distance, and a breakdown by world](app_report.jpg)
@@ -116,15 +119,18 @@ uncovered = dataset.load_saved_view("s2r-uncovered-real")
 ```
 
 Object level: add `"level": "objects", "patches_field": "ground_truth"`.
-Another dataset for the real set: add `"real_dataset": "my-real-dataset"`.
+Another dataset for the real set: add `"real_dataset": "my-real-dataset"`
+(and `"real_view": "(entire dataset)"` to use all of it).
+Video frames: add `"split_field": "recording"` (any field naming the clip).
+The core functions are plain Python too: `gap.measure(sim_view, real_view, ...)`.
 
 ## What the numbers mean
 
 | Output | Meaning | How it is computed |
 | --- | --- | --- |
-| Separability | How easily a linear classifier tells the sets apart. 50 % = alike, 100 % = trivially different | 5-fold cross-validated balanced accuracy of logistic regression on normalised embeddings (a classifier two-sample test, Lopez-Paz and Oquab, ICLR 2017) |
+| Separability | How easily a linear classifier tells the sets apart. 50 % = alike, 100 % = trivially different | 5-fold cross-validated balanced accuracy of logistic regression on normalised embeddings (a classifier two-sample test, Lopez-Paz and Oquab, ICLR 2017). Folds never split a cluster: an image's objects, or a recording given as the split field |
 | Spread across folds | How stable the score is between folds (not a confidence interval) | Standard deviation of the 5 fold scores |
-| Permutation p-value | Could this separability be chance? Small = no | The same test with shuffled set labels, 100 times (at most 500 items per set) |
+| Permutation p-value | Could this separability be chance? Small = no | The same test with shuffled set labels, 100 times (at most 500 items per set); with clusters, whole clusters are shuffled |
 | Sanity checks | Should be near 50 %; if not, the score is not trustworthy | The same test on two random halves of each set |
 | Fréchet distance | A continuous size of the gap that keeps ranking when separability saturates at 100 % | Between Gaussians fitted to the two embedding sets, as in FID, on equal-sized random subsets (half the smaller set, stated in the report) |
 | Baselines and excess | How much of the Fréchet distance is just small-sample bias, and how much is the gap | The same distance between two halves of the simulated set, and of the real set, at the same size; the excess is the distance minus their mean. Compare runs by the excess |
@@ -137,8 +143,14 @@ Another dataset for the real set: add `"real_dataset": "my-real-dataset"`.
 - Separability says the sets differ, not why, and not how much a given
   detector will lose. Use the views to see why; measure the detector on real
   data to see how much.
-- Frames from one video are near-duplicates. Split by recording, not by
-  frame, or the sanity checks will come out below 50 %.
+- Near-duplicates make two sets look more different than they are:
+  frames of one video, or several crops of one image, land on both sides of
+  a fold and the classifier learns to recognise them. In a test with two
+  sets drawn from one source (60 images of 5 crops each, three seeds),
+  item-level folds scored 63 to 65 % with p = 0.0099 every time; keeping
+  images whole scored 42 to 54 % with p = 0.27 to 0.96. Object level
+  always keeps each image's objects together; for video, give the
+  recording as the **split field**.
 - Small sets are noisy: with 20 images per side from one source,
   separability can land anywhere from about 30 % to 75 %. The report warns
   under 50 per side; rely on the permutation p-value there.
@@ -151,6 +163,14 @@ Another dataset for the real set: add `"real_dataset": "my-real-dataset"`.
 
 ## Changelog
 
+- **2.3.0**: fixes from a third review. Object level computes embeddings
+  only for the boxes that lack one and never overwrites existing ones; a
+  re-run at object level clears the previous run's box scores (now declared,
+  so the App can filter by them). Folds, permutations, sanity halves and
+  Fréchet baselines keep clusters whole: each image's objects, or a split
+  field such as a recording. The App accepts the current view, and an entire
+  second dataset; the plugin's own result views and fields are no longer
+  offered as inputs; patches views are refused with a clear message.
 - **2.2.0**: fixes from a second review. A rare group no longer shrinks
   every group comparison: groups under 50 items are listed, not ranked, and
   ranked groups are averaged over 3 subsamples. Fréchet distances come with

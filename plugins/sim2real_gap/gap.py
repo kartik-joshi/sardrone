@@ -53,50 +53,118 @@ def _classifier():
     return LogisticRegression(max_iter=2000, class_weight="balanced")
 
 
-def separability(a: np.ndarray, b: np.ndarray, seed: int = 0, folds: int = FOLDS) -> tuple[float, float]:
+def _labels_and_clusters(a, b, groups_a=None, groups_b=None):
+    """X, y, and cluster labels (or None when every item is its own cluster)."""
+    x = np.vstack([np.asarray(a, float), np.asarray(b, float)])
+    y = np.r_[np.zeros(len(a)), np.ones(len(b))]
+    if groups_a is None and groups_b is None:
+        return x, y, None
+    ga = [f"a:{g}" for g in (groups_a if groups_a is not None else range(len(a)))]
+    gb = [f"b:{g}" for g in (groups_b if groups_b is not None else range(len(b)))]
+    clusters = np.array(ga + gb)
+    return x, y, (None if len(set(clusters)) == len(clusters) else clusters)
+
+
+def _splitter(y, clusters, folds: int, seed: int):
+    """Stratified folds; with clusters, every cluster (an image's crops, a
+    recording's frames) stays in one fold, so near-duplicates cannot leak
+    from training into testing."""
+    from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
+
+    if clusters is None:
+        return StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
+    for label in (0, 1):
+        k = len(set(clusters[y == label]))
+        if k < folds:
+            raise ValueError(f"need at least {folds} clusters (images or recordings) in each set, got {k}")
+    return StratifiedGroupKFold(n_splits=folds, shuffle=True, random_state=seed)
+
+
+def separability(a: np.ndarray, b: np.ndarray, seed: int = 0, folds: int = FOLDS,
+                 groups_a=None, groups_b=None) -> tuple[float, float]:  # fmt: skip
     """(mean, std) over folds of the balanced accuracy of telling `a` from `b`.
     Balanced accuracy weighs both sets equally, so guessing scores 50 % even
-    when the sets differ in size."""
-    from sklearn.model_selection import StratifiedKFold, cross_val_score
+    when the sets differ in size. `groups_a` / `groups_b`: a cluster id per
+    item (e.g. the image a crop came from); clusters are never split across
+    folds, which would otherwise inflate the score."""
+    from sklearn.model_selection import cross_val_score
 
-    a, b = np.asarray(a, float), np.asarray(b, float)
     if min(len(a), len(b)) < folds:
         raise ValueError(f"need at least {folds} items in each set, got {len(a)} and {len(b)}")
-    x = np.vstack([a, b])
-    y = np.r_[np.zeros(len(a)), np.ones(len(b))]
-    splitter = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
-    scores = cross_val_score(_classifier(), x, y, cv=splitter, scoring="balanced_accuracy")
+    x, y, clusters = _labels_and_clusters(a, b, groups_a, groups_b)
+    scores = cross_val_score(_classifier(), x, y, groups=clusters, cv=_splitter(y, clusters, folds, seed),
+                             scoring="balanced_accuracy")  # fmt: skip
     return float(scores.mean()), float(scores.std())
 
 
-def realism_scores(a: np.ndarray, b: np.ndarray, seed: int = 0, folds: int = FOLDS) -> tuple[np.ndarray, np.ndarray]:
+def realism_scores(a: np.ndarray, b: np.ndarray, seed: int = 0, folds: int = FOLDS,
+                   groups_a=None, groups_b=None) -> tuple[np.ndarray, np.ndarray]:  # fmt: skip
     """Out-of-fold P(item is from `b`) for every item of `a` and of `b`.
-    Out of fold: no item is scored by a classifier that saw it."""
-    from sklearn.model_selection import StratifiedKFold, cross_val_predict
+    Out of fold: no item (and no item of its cluster) is scored by a
+    classifier that saw it."""
+    from sklearn.model_selection import cross_val_predict
 
-    x = np.vstack([a, b])
-    y = np.r_[np.zeros(len(a)), np.ones(len(b))]
-    splitter = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
-    p = cross_val_predict(_classifier(), x, y, cv=splitter, method="predict_proba")[:, 1]
+    x, y, clusters = _labels_and_clusters(a, b, groups_a, groups_b)
+    p = cross_val_predict(_classifier(), x, y, groups=clusters, cv=_splitter(y, clusters, folds, seed),
+                          method="predict_proba")[:, 1]  # fmt: skip
     return p[: len(a)], p[len(a):]
 
 
+def _cluster_order(n: int, groups, rng) -> np.ndarray:
+    """A random order of n items that keeps each cluster's items together."""
+    if groups is None:
+        return rng.permutation(n)
+    _, index = np.unique(np.asarray(groups, dtype=str), return_inverse=True)
+    rank = rng.permutation(index.max() + 1)
+    return np.argsort(rank[index], kind="stable")
+
+
+def _take(n_items: int, groups, cap: int, rng) -> np.ndarray:
+    """At most `cap` items in random order, whole clusters at a time (at least one)."""
+    order = _cluster_order(n_items, groups, rng)
+    if n_items <= cap or groups is None:
+        return order[:cap]
+    g = np.asarray(groups, dtype=str)[order]
+    cluster = np.r_[True, g[1:] != g[:-1]].cumsum()  # 1, 1, 2, 3, 3, ... along the order
+    keep = max(1, int((np.cumsum(np.bincount(cluster)[1:]) <= cap).sum()))
+    return order[cluster <= keep]
+
+
 def permutation_p_value(a: np.ndarray, b: np.ndarray, seed: int = 0, permutations: int = 100,
-                        cap: int = 500) -> float:  # fmt: skip
-    """p-value of the separability against shuffled labels (at most `cap` items
-    per set, for speed). The smallest possible value is 1 / (permutations + 1):
-    0.0099 with 100. A large p means the score could be chance."""
-    from sklearn.model_selection import StratifiedKFold, permutation_test_score
+                        cap: int = 500, groups_a=None, groups_b=None) -> float:  # fmt: skip
+    """p-value of the separability against shuffled set labels (at most `cap`
+    items per set, for speed). The smallest possible value is
+    1 / (permutations + 1): 0.0099 with 100. A large p means the score could
+    be chance. With clusters, whole clusters are shuffled between the sets
+    (shuffling single items would make clustered data look significant)."""
+    from sklearn.model_selection import cross_val_score, permutation_test_score
 
     rng = np.random.default_rng(seed)
-    a = a[rng.choice(len(a), min(cap, len(a)), replace=False)]
-    b = b[rng.choice(len(b), min(cap, len(b)), replace=False)]
-    x = np.vstack([a, b])
-    y = np.r_[np.zeros(len(a)), np.ones(len(b))]
-    splitter = StratifiedKFold(n_splits=FOLDS, shuffle=True, random_state=seed)
-    _, _, p = permutation_test_score(_classifier(), x, y, cv=splitter, n_permutations=permutations,
-                                     scoring="balanced_accuracy", random_state=seed)  # fmt: skip
-    return float(p)
+    ia, ib = _take(len(a), groups_a, cap, rng), _take(len(b), groups_b, cap, rng)
+    ga = None if groups_a is None else np.asarray(groups_a)[ia]
+    gb = None if groups_b is None else np.asarray(groups_b)[ib]
+    x, y, clusters = _labels_and_clusters(a[ia], b[ib], ga, gb)
+    if clusters is None:
+        splitter = _splitter(y, None, FOLDS, seed)
+        _, _, p = permutation_test_score(_classifier(), x, y, cv=splitter, n_permutations=permutations,
+                                         scoring="balanced_accuracy", random_state=seed)  # fmt: skip
+        return float(p)
+
+    def score(labels):
+        cv = _splitter(labels, clusters, FOLDS, seed)
+        return cross_val_score(_classifier(), x, labels, groups=clusters, cv=cv, scoring="balanced_accuracy").mean()
+
+    names, index = np.unique(clusters, return_inverse=True)
+    cluster_label = np.zeros(len(names))
+    cluster_label[index] = y
+    observed, hits = score(y), 0
+    for _ in range(permutations):
+        shuffled = rng.permutation(cluster_label)[index]  # whole clusters change sides
+        try:
+            hits += score(shuffled) >= observed
+        except ValueError:  # a shuffle left too few clusters on one side for the folds
+            hits += 1
+    return float((hits + 1) / (permutations + 1))
 
 
 def equal_size(a: np.ndarray, b: np.ndarray, n: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
@@ -129,12 +197,17 @@ def nearest_distance(query: np.ndarray, reference: np.ndarray, chunk: int = 2048
     return out
 
 
-def random_halves(x: np.ndarray, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
-    """Two random halves of one set. (Odd/even frames of a video would score
-    below 50 %: each frame's twin lands in the other half.)"""
-    order = np.random.default_rng(seed).permutation(len(x))
+def random_halves(x: np.ndarray, seed: int = 0, groups=None):
+    """Two random halves of one set: (half_a, half_b), or with `groups`
+    (half_a, half_b, groups_a, groups_b), whole clusters to one half each.
+    (Odd/even frames of a video would score below 50 %: each frame's twin
+    lands in the other half.)"""
+    order = _cluster_order(len(x), groups, np.random.default_rng(seed))
     half = len(order) // 2
-    return x[order[:half]], x[order[half:]]
+    if groups is None:
+        return x[order[:half]], x[order[half:]]
+    g = np.asarray(groups)
+    return x[order[:half]], x[order[half:]], g[order[:half]], g[order[half:]]
 
 
 def subsample(n: int, cap: int | None, seed: int = 0) -> np.ndarray:
@@ -166,10 +239,10 @@ def ensure_embeddings(view, field: str, model_name: str = DEFAULT_MODEL, patches
     import fiftyone.zoo as foz
 
     if patches_field:
-        path = f"{patches_field}.detections.{field}"
-        missing = [e is None for boxes in view.values(path) for e in (boxes or [])]
-        if any(missing):
-            view.compute_patch_embeddings(foz.load_zoo_model(model_name), patches_field, embeddings_field=field,
+        # Only the boxes without an embedding: existing embeddings are never recomputed or overwritten.
+        todo = view.filter_labels(patches_field, ~fo.ViewField(field).exists())
+        if len(todo):
+            todo.compute_patch_embeddings(foz.load_zoo_model(model_name), patches_field, embeddings_field=field,
                                           batch_size=32, num_workers=0)  # fmt: skip
         return
     todo = view.match(~fo.ViewField(field).exists()) if view.has_field(field) else view
@@ -179,24 +252,38 @@ def ensure_embeddings(view, field: str, model_name: str = DEFAULT_MODEL, patches
                                 num_workers=0)  # fmt: skip
 
 
-def _items(view, field: str, patches_field: str | None):
-    """(ids, embeddings) of the samples or objects in a view."""
+def _items(view, field: str, patches_field: str | None, with_owners: bool = False):
+    """(ids, embeddings) of the samples or objects in a view; with
+    `with_owners`, also the sample id each item belongs to."""
     if patches_field:
-        ids, vecs = [], []
-        for boxes_ids, boxes_vecs in zip(view.values(f"{patches_field}.detections.id"),
-                                         view.values(f"{patches_field}.detections.{field}")):  # fmt: skip
+        ids, vecs, owners = [], [], []
+        for sample_id, boxes_ids, boxes_vecs in zip(view.values("id"), view.values(f"{patches_field}.detections.id"),
+                                                    view.values(f"{patches_field}.detections.{field}")):  # fmt: skip
             for i, v in zip(boxes_ids or [], boxes_vecs or []):
                 if v is not None:
                     ids.append(i)
                     vecs.append(v)
+                    owners.append(sample_id)
     else:
         pairs = [(i, v) for i, v in zip(view.values("id"), view.values(field)) if v is not None]
         ids, vecs = [i for i, _ in pairs], [v for _, v in pairs]
+        owners = ids
     sizes = {len(v) for v in vecs}
     if len(sizes) > 1:
         raise ValueError(f"field {field!r} holds embeddings of different sizes {sorted(sizes)}: "
                          "it mixes models; use one embeddings field per model")  # fmt: skip
-    return ids, (normalise(vecs) if vecs else np.zeros((0, 0)))
+    x = normalise(vecs) if vecs else np.zeros((0, 0))
+    return (ids, x, owners) if with_owners else (ids, x)
+
+
+def _clusters(view, owners: list, split_field: str | None, patches_field: str | None):
+    """A cluster id per item, or None if every item stands alone: the value of
+    `split_field` (e.g. a recording), else at object level the sample a box
+    came from. Folds, permutations and halves keep clusters whole."""
+    if split_field:
+        by_sample = dict(zip(view.values("id"), view.values(split_field)))
+        return np.array([str(by_sample.get(o)) if by_sample.get(o) is not None else f"sample:{o}" for o in owners])
+    return np.array(owners) if patches_field else None
 
 
 def clear_previous(dataset, prefix: str, patches_field: str | None) -> None:
@@ -204,7 +291,8 @@ def clear_previous(dataset, prefix: str, patches_field: str | None) -> None:
     fields, filters and saved views only ever show the latest run."""
     for name in ("domain", "realism", "nearest"):
         path = f"{patches_field}.detections.{prefix}_{name}" if patches_field else f"{prefix}_{name}"
-        if dataset.has_field(path):
+        # count(): box attributes written by earlier versions were not declared, so has_field() misses them
+        if dataset.has_field(path) or (patches_field and dataset.count(path)):
             dataset.set_field(path, None).save()
 
 
@@ -214,7 +302,7 @@ def _write(view, ids: list, values, path: str, patches_field: str | None) -> Non
         return
     mapping = {i: (float(v) if isinstance(v, (float, np.floating)) else v) for i, v in zip(ids, values)}
     if patches_field:
-        view.set_label_values(f"{patches_field}.detections.{path}", mapping)
+        view.set_label_values(f"{patches_field}.detections.{path}", mapping, dynamic=True)  # declared: filterable
     else:
         view.set_values(path, mapping, key_field="id")
 
@@ -226,14 +314,17 @@ MIN_GROUP = 50  # groups smaller than this are listed but not ranked
 REPEATS = 3  # subsamples averaged for each group's scores
 
 
-def frechet_with_baseline(a: np.ndarray, b: np.ndarray, n: int, seed: int = 0) -> dict:
+def frechet_with_baseline(a: np.ndarray, b: np.ndarray, n: int, seed: int = 0, groups_a=None,
+                          groups_b=None) -> dict:  # fmt: skip
     """The Frechet distance between `a` and `b` at `n` items each, next to the
     same distance between two disjoint halves of `a` and of `b` at the same n.
     At typical sizes most of a raw Frechet distance is small-sample bias; the
     baselines show what "no gap" scores, and `excess` is the gap above it.
-    Needs at least 2n items in each set."""
+    Needs at least 2n items in each set. With clusters, the halves keep
+    clusters whole (but the boundary one), so near-duplicates cannot make
+    the baseline look smaller than it is."""
     rng = np.random.default_rng(seed)
-    pa, pb = rng.permutation(len(a)), rng.permutation(len(b))
+    pa, pb = _cluster_order(len(a), groups_a, rng), _cluster_order(len(b), groups_b, rng)
     a1, a2, b1, b2 = a[pa[:n]], a[pa[n:2 * n]], b[pb[:n]], b[pb[n:2 * n]]
     gap_value = frechet_distance(a1, b1)
     base_a, base_b = frechet_distance(a1, a2), frechet_distance(b1, b2)
@@ -242,7 +333,8 @@ def frechet_with_baseline(a: np.ndarray, b: np.ndarray, n: int, seed: int = 0) -
 
 
 def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", model_name: str = DEFAULT_MODEL,
-            patches_field: str | None = None, group_field: str | None = None, prefix: str = DEFAULT_PREFIX,
+            patches_field: str | None = None, group_field: str | None = None, split_field: str | None = None,
+            prefix: str = DEFAULT_PREFIX,
             brain_key: str | None = "sim2real_gap", max_items: int | None = 5000, seed: int = 0,
             log=lambda message: None) -> dict:  # fmt: skip
     """Measure the gap between two views (from one dataset or two).
@@ -254,6 +346,9 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     dataset, stores the summary in `dataset.info[prefix]`, and finally (if
     asked) builds the embedding map, whose failure is recorded, not raised.
     """
+    for view in (sim_view, real_view):
+        if view._is_patches or view._is_frames or view._is_clips:
+            raise ValueError("give views of whole images; for objects use the objects level with a detections field")
     same = sim_view._dataset.name == real_view._dataset.name
     if same:
         overlap = set(sim_view.values("id")) & set(real_view.values("id"))
@@ -262,8 +357,8 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     for view in (sim_view, real_view):
         log(f"embeddings for {view._dataset.name} ...")
         ensure_embeddings(view, embeddings_field, model_name, patches_field)
-    sim_ids, sim = _items(sim_view, embeddings_field, patches_field)
-    real_ids, real = _items(real_view, embeddings_field, patches_field)
+    sim_ids, sim, sim_owners = _items(sim_view, embeddings_field, patches_field, with_owners=True)
+    real_ids, real, real_owners = _items(real_view, embeddings_field, patches_field, with_owners=True)
     if min(len(sim_ids), len(real_ids)) < 2 * FOLDS:
         raise ValueError(f"need at least {2 * FOLDS} items in each set, got {len(sim_ids)} and {len(real_ids)}")
     if sim.shape[1] != real.shape[1]:
@@ -272,9 +367,17 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     # ---- compute everything ----
     si, ri = subsample(len(sim), max_items, seed), subsample(len(real), max_items, seed + 1)
     log("separability, sanity checks, permutation test ...")
-    sep, sep_std = separability(sim[si], real[ri], seed)
+    cs, cr = _clusters(sim_view, sim_owners, split_field, patches_field), _clusters(real_view, real_owners,
+                                                                                   split_field, patches_field)
+    gs, gr = (None if cs is None else cs[si]), (None if cr is None else cr[ri])
+    sep, sep_std = separability(sim[si], real[ri], seed, groups_a=gs, groups_b=gr)
     n_fd = min(len(si), len(ri)) // 2
-    fd = frechet_with_baseline(sim[si], real[ri], n_fd, seed)
+    fd = frechet_with_baseline(sim[si], real[ri], n_fd, seed, gs, gr)
+
+    def sanity(x, g):
+        halves = random_halves(x, seed, g)
+        return separability(halves[0], halves[1], seed, groups_a=halves[2], groups_b=halves[3]) if g is not None \
+            else separability(*halves, seed)
     summary = {
         "level": "objects" if patches_field else "images",
         "patches_field": patches_field,
@@ -284,9 +387,11 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
         "real_items": len(real_ids),
         "separability": round(sep, 4),
         "separability_std": round(sep_std, 4),
-        "sanity_sim_vs_sim": round(separability(*random_halves(sim[si], seed), seed)[0], 4),
-        "sanity_real_vs_real": round(separability(*random_halves(real[ri], seed), seed)[0], 4),
-        "p_value": round(permutation_p_value(sim[si], real[ri], seed), 4),
+        "sanity_sim_vs_sim": round(sanity(sim[si], gs)[0], 4),
+        "sanity_real_vs_real": round(sanity(real[ri], gr)[0], 4),
+        "p_value": round(permutation_p_value(sim[si], real[ri], seed, groups_a=gs, groups_b=gr), 4),
+        "split_by": split_field or ("image" if patches_field else None),
+        "clusters": None if cs is None else {"sim": len(set(gs)), "real": len(set(gr))},
         "frechet": fd["frechet"],
         "frechet_baseline_sim": fd["baseline_sim"],
         "frechet_baseline_real": fd["baseline_real"],
@@ -301,7 +406,7 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     # are scored by a classifier fitted on the whole subsample.
     log("per-item realism and nearest-neighbour distances ...")
     p_sim, p_real = np.empty(len(sim)), np.empty(len(real))
-    p_sim[si], p_real[ri] = realism_scores(sim[si], real[ri], seed)
+    p_sim[si], p_real[ri] = realism_scores(sim[si], real[ri], seed, groups_a=gs, groups_b=gr)
     rest_s, rest_r = np.setdiff1d(np.arange(len(sim)), si), np.setdiff1d(np.arange(len(real)), ri)
     if len(rest_s) or len(rest_r):
         clf = _classifier().fit(np.vstack([sim[si], real[ri]]), np.r_[np.zeros(len(si)), np.ones(len(ri))])
@@ -315,7 +420,8 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
     if group_field:
         log(f"breakdown by {group_field} ...")
         summary["groups"] = groups(sim_view, real[ri], group_field, embeddings_field, patches_field, seed,
-                                   realism_by_id=dict(zip(sim_ids, p_sim)))  # fmt: skip
+                                   realism_by_id=dict(zip(sim_ids, p_sim)), real_groups=gr,
+                                   split_field=split_field)  # fmt: skip
 
     # ---- only now: replace the previous run's results ----
     datasets = {sim_view._dataset.name: sim_view._dataset, real_view._dataset.name: real_view._dataset}
@@ -349,7 +455,7 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
 
 def groups(sim_view, real: np.ndarray, group_field: str, embeddings_field: str, patches_field: str | None,
            seed: int = 0, min_group: int = MIN_GROUP, repeats: int = REPEATS,
-           realism_by_id: dict | None = None) -> list[dict]:  # fmt: skip
+           realism_by_id: dict | None = None, real_groups=None, split_field: str | None = None) -> list[dict]:  # fmt: skip
     """Each value of `group_field` in the simulated set against the real set.
 
     Groups with at least `min_group` items are ranked, most real-like first:
@@ -364,11 +470,14 @@ def groups(sim_view, real: np.ndarray, group_field: str, embeddings_field: str, 
     missing = sim_view.match(~F(group_field).exists())
     if len(missing):
         members.append(("(none)", missing))
-    data = [(value, *_items(view, embeddings_field, patches_field)) for value, view in members]
-    ranked = [len(x) for _, _, x in data if len(x) >= min_group]
+    data = []
+    for value, view in members:
+        ids, x, owners = _items(view, embeddings_field, patches_field, with_owners=True)
+        data.append((value, ids, x, _clusters(view, owners, split_field, patches_field)))
+    ranked = [len(x) for _, _, x, _ in data if len(x) >= min_group]
     n = min(ranked + [len(real) // 2]) if ranked else 0
     rows = []
-    for k, (value, ids, x) in enumerate(data):
+    for k, (value, ids, x, gx) in enumerate(data):
         row = {"value": value, "items": len(x), "n": None, "ranked": False,
                "separability": None, "frechet_excess": None, "realism": None}  # fmt: skip
         if realism_by_id:
@@ -378,11 +487,20 @@ def groups(sim_view, real: np.ndarray, group_field: str, embeddings_field: str, 
             seps, excess = [], []
             for r in range(repeats):
                 rng = np.random.default_rng(seed + 100 * k + r)
-                xs = x[rng.choice(len(x), n, replace=False)]
-                perm = rng.permutation(len(real))
+                pick = rng.choice(len(x), n, replace=False)
+                perm = _cluster_order(len(real), real_groups, rng)
                 r1, r2 = real[perm[:n]], real[perm[n:2 * n]]
-                seps.append(separability(xs, r1, seed + r)[0])
+                g1 = None if real_groups is None else np.asarray(real_groups)[perm[:n]]
+                try:
+                    seps.append(separability(x[pick], r1, seed + r, groups_a=None if gx is None else gx[pick],
+                                             groups_b=g1)[0])  # fmt: skip
+                except ValueError:  # too few clusters in this subsample for the folds
+                    continue
+                xs = x[pick]
                 excess.append(frechet_distance(xs, r1) - frechet_distance(r1, r2))
+            if not seps:
+                rows.append(row)
+                continue
             row.update(n=n, ranked=True, separability=round(float(np.mean(seps)), 4),
                        frechet_excess=round(float(np.mean(excess)), 4))  # fmt: skip
         rows.append(row)

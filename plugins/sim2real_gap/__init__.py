@@ -37,7 +37,18 @@ def _group_fields(dataset):
 
     kinds = (fo.StringField, fo.IntField, fo.BooleanField)
     skip = {"id", "filepath", "media_type"}
-    return sorted(n for n, f in dataset.get_field_schema().items() if isinstance(f, kinds) and n not in skip)
+    return sorted(n for n, f in dataset.get_field_schema().items()
+                  if isinstance(f, kinds) and n not in skip and not n.endswith("_domain"))  # fmt: skip
+
+
+CURRENT_VIEW = "(current view)"
+ENTIRE_DATASET = "(entire dataset)"
+
+
+def _input_views(dataset) -> list:
+    """Saved views to offer as inputs, without this plugin's own result views."""
+    own = ("-realistic-sim", "-uncovered-real")
+    return [v for v in dataset.list_saved_views() if not v.endswith(own)]
 
 
 def pct(x) -> str:
@@ -63,6 +74,11 @@ def report(summary: dict) -> str:
         f"| {level.capitalize()}: simulated / real | {summary['sim_items']} / {summary['real_items']} |",
         f"| Mean realism of simulated {level} | {pct(summary['realism_sim_mean'])} |",
     ]
+    if summary.get("clusters"):
+        c, by = summary["clusters"], summary.get("split_by")
+        unit = "image" if by == "image" else f"`{by}` value"
+        lines += ["", f"Folds, permutations and halves keep each {unit} together "
+                  f"({c['sim']} simulated, {c['real']} real), so near-duplicates do not inflate the scores."]  # fmt: skip
     if summary.get("small_sets"):
         lines += ["", f"**Small sets** ({summary['frechet_n']} per side): scores are noisy; "
                   "trust the permutation p-value more than the percentage."]  # fmt: skip
@@ -107,18 +123,21 @@ class MeasureSim2RealGap(foo.Operator):
         import fiftyone as fo
 
         inputs = types.Object()
-        views = ctx.dataset.list_saved_views() if ctx.dataset else []
-        if not views:
-            inputs.md("Save a view of your simulated (or first) image set first.", name="help")
+        if not ctx.dataset:
+            inputs.md("Open a dataset first.", name="help")
             return types.Property(inputs)
-        inputs.enum("sim_view", views, label="Simulated images (saved view)", required=True)
+        inputs.enum("sim_view", [CURRENT_VIEW] + _input_views(ctx.dataset), default=CURRENT_VIEW,
+                    label="Simulated (first) images", description="The current view, or a saved view",
+                    required=True)  # fmt: skip
 
         datasets = fo.list_datasets()
         inputs.enum("real_dataset", datasets, default=ctx.dataset.name, label="Real images: dataset",
                     description="This dataset, or another one (no embedding map across datasets)")  # fmt: skip
         other = ctx.params.get("real_dataset") or ctx.dataset.name
-        real_views = fo.load_dataset(other).list_saved_views() if other in datasets else []
-        inputs.enum("real_view", real_views, label="Real images (saved view)", required=True)
+        real_views = [ENTIRE_DATASET] + (_input_views(fo.load_dataset(other)) if other in datasets else [])
+        inputs.enum("real_view", real_views, label="Real (second) images",
+                    description="A saved view, or the entire dataset (when it is another dataset)",
+                    required=True)  # fmt: skip
 
         inputs.enum("level", ["images", "objects"], default="images", label="Compare",
                     description="Whole images, or object crops from a detections field")  # fmt: skip
@@ -135,6 +154,9 @@ class MeasureSim2RealGap(foo.Operator):
                    description="Reused if present, computed where missing")  # fmt: skip
         inputs.enum("group_field", _group_fields(ctx.dataset), label="Break down by (optional)",
                     description="E.g. world, weather or camera: which simulated conditions are closest to real")  # fmt: skip
+        inputs.enum("split_field", _group_fields(ctx.dataset), label="Keep together (optional)",
+                    description="E.g. a recording or episode id: its images never straddle a train/test fold. "
+                    "Use it for video frames. At object level, each image's objects are always kept together")  # fmt: skip
         inputs.str("prefix", default="s2r", label="Field prefix")
         inputs.str("brain_key", default="sim2real_gap", label="Brain key for the embedding map")
         inputs.int("max_items", default=5000, min=50, label="Max items per set for the set-level scores")
@@ -147,16 +169,22 @@ class MeasureSim2RealGap(foo.Operator):
         import fiftyone as fo
 
         core = _core()
-        sim_view = ctx.dataset.load_saved_view(ctx.params["sim_view"])
+        name = ctx.params.get("sim_view") or CURRENT_VIEW
+        sim_view = ctx.view if name == CURRENT_VIEW else ctx.dataset.load_saved_view(name)
         real_dataset = ctx.params.get("real_dataset") or ctx.dataset.name
         source = ctx.dataset if real_dataset == ctx.dataset.name else fo.load_dataset(real_dataset)
-        real_view = source.load_saved_view(ctx.params["real_view"])
+        real_name = ctx.params["real_view"]
+        real_view = source.view() if real_name == ENTIRE_DATASET else source.load_saved_view(real_name)
+        objects = ctx.params.get("level") == "objects"
+        if objects and not ctx.params.get("patches_field"):
+            raise ValueError("comparing objects needs a detections field")
         summary = core.measure(
             sim_view, real_view,
             embeddings_field=ctx.params.get("embeddings_field") or "clip_embedding",
             model_name=ctx.params.get("model") or core.DEFAULT_MODEL,
-            patches_field=ctx.params.get("patches_field") if ctx.params.get("level") == "objects" else None,
+            patches_field=ctx.params.get("patches_field") if objects else None,
             group_field=ctx.params.get("group_field") or None,
+            split_field=ctx.params.get("split_field") or None,
             prefix=ctx.params.get("prefix") or core.DEFAULT_PREFIX,
             brain_key=ctx.params.get("brain_key") or None,
             max_items=ctx.params.get("max_items") or 5000,
