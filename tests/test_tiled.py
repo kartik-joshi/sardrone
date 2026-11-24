@@ -118,3 +118,46 @@ def test_tile_boxes_come_back_in_image_pixels_and_non_people_are_ignored():
     full_call, tile_call = model.calls
     assert full_call[1] == 1280 and tile_call[1] == 1280
     assert len(tile_call[0]) == len(tile_grid(4000, 3000))
+
+
+def _matched(correct_flags_per_image, truths_per_image):
+    """A tiny Matched: one prediction per flag, confidences descending."""
+    import numpy as np
+
+    from sardrone.train.metrics import COCO_IOUS, Matched
+
+    image, correct = [], []
+    for number, flags in enumerate(correct_flags_per_image):
+        for flag in flags:
+            image.append(number)
+            correct.append(flag)
+    n = len(correct)
+    return Matched(
+        confidence=np.linspace(1.0, 0.1, n),
+        correct=np.array([correct] * len(COCO_IOUS), dtype=bool),
+        image=np.array(image),
+        truths_per_image=np.array(truths_per_image),
+        ious=COCO_IOUS,
+    )
+
+
+def test_paired_difference_is_zero_for_identical_methods_and_positive_for_a_better_one():
+    import numpy as np
+
+    from sardrone.train.metrics import paired_difference
+
+    truths = [2, 1, 2, 1]
+    worse = _matched([[True, False], [False], [True, False], [False]], truths)
+    better = _matched([[True, True], [True], [True, True], [True]], truths)
+    assert np.allclose(paired_difference(worse, worse, 200), 0.0)
+    gains = paired_difference(worse, better, 200)
+    assert (gains > 0).mean() > 0.9
+
+
+def test_paired_difference_refuses_different_test_sets():
+    from sardrone.train.metrics import paired_difference
+
+    a = _matched([[True], [False]], [1, 1])
+    b = _matched([[True], [False]], [1, 2])
+    with pytest.raises(ValueError):
+        paired_difference(a, b, 10)

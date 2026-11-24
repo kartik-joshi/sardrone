@@ -173,6 +173,47 @@ def score(view, field: str, version: str, repeats: int = 1000) -> dict:
     }  # fmt: skip
 
 
+GAIN_CSV = env.PROJECT_ROOT / "docs" / "results" / "tiled_gain.csv"
+GAIN_FIELDS = ["dataset", "version", "images", "full_map50", "tiled_map50", "gain", "gain_low", "gain_high",
+               "share_tiled_better", "repeats", "commit", "dirty", "evaluated_utc"]  # fmt: skip
+
+
+def gains(datasets: list[str], versions: list[str], repeats: int = 1000, path: Path = GAIN_CSV) -> list[dict]:
+    """Paired bootstrap of (tiled - full) mAP@0.5 from the stored predictions; no model is run."""
+    import fiftyone as fo
+    import numpy as np
+
+    from sardrone.batch import git_commit
+    from sardrone.train import scorecard
+    from sardrone.train.metrics import interval, match_dataset, paired_difference
+
+    commit, dirty = git_commit()
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = []
+    for name in datasets:
+        dataset_name, view_name = VIEWS[name]
+        view = fo.load_dataset(dataset_name).load_saved_view(view_name)
+        for version in versions:
+            full = match_dataset(scorecard.images_from_view(view, field_for(version)))
+            tiled = match_dataset(scorecard.images_from_view(view, field_for(version) + "_tiled"))
+            samples = paired_difference(full, tiled, repeats)
+            low, high = interval(samples)
+            rows.append({
+                "dataset": name, "version": version, "images": len(full.truths_per_image),
+                "full_map50": round(score(view, field_for(version), version, 1)["map50"], 4),
+                "tiled_map50": round(score(view, field_for(version) + "_tiled", version, 1)["map50"], 4),
+                "gain": round(float(np.median(samples)), 4), "gain_low": round(low, 4), "gain_high": round(high, 4),
+                "share_tiled_better": round(float((samples > 0).mean()), 4), "repeats": repeats,
+                "commit": commit, "dirty": dirty, "evaluated_utc": stamp,
+            })  # fmt: skip
+            print(json.dumps(rows[-1]), flush=True)
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=GAIN_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return rows
+
+
 def upsert(rows_new: list[dict], path: Path = DEFAULT_CSV) -> None:
     keys = {(r["dataset"], r["version"], r["method"]) for r in rows_new}
     rows = []
@@ -195,11 +236,19 @@ def main(argv: list[str] | None = None) -> int:
     from sardrone.train.train import DEFAULT_TRAIN_ROOT
 
     parser = argparse.ArgumentParser(description="Score models with and without tiled detection.")
-    parser.add_argument("--dataset", required=True, choices=sorted(VIEWS))
+    parser.add_argument("--dataset", choices=sorted(VIEWS))
+    parser.add_argument("--gains", nargs="+", choices=sorted(VIEWS),
+                        help="paired bootstrap of the tiled gain on these datasets, from stored predictions")
     parser.add_argument("--versions", nargs="+", required=True)
     parser.add_argument("--device", default="mps")
     parser.add_argument("--limit", type=int, help="only the first N images (smoke test; the CSV is not written)")
     args = parser.parse_args(argv)
+    if args.gains:
+        gains(args.gains, args.versions)
+        print(f"results: {GAIN_CSV}")
+        return 0
+    if not args.dataset:
+        parser.error("--dataset is required unless --gains is given")
 
     dataset_name, view_name = VIEWS[args.dataset]
     view = fo.load_dataset(dataset_name).load_saved_view(view_name)

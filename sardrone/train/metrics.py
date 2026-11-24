@@ -205,6 +205,22 @@ def bootstrap_map(matched: Matched, repeats: int = 1000, seed: int = 0) -> np.nd
     return out
 
 
+def paired_difference(a: Matched, b: Matched, repeats: int = 1000, seed: int = 0) -> np.ndarray:
+    """`repeats` samples of mAP@0.5(b) - mAP@0.5(a), resampling the SAME images
+    for both. Use when two methods ran on the same test set: the paired
+    difference is far tighter than comparing two separate intervals."""
+    count = len(a.truths_per_image)
+    if len(b.truths_per_image) != count or not np.array_equal(a.truths_per_image, b.truths_per_image):
+        raise ValueError("paired_difference needs the same images, in the same order, with the same truths")
+    rng = np.random.default_rng(seed)
+    ha, hb = a.ious.index(0.5), b.ious.index(0.5)
+    out = np.zeros(repeats)
+    for repeat in range(repeats):
+        weights = np.bincount(rng.integers(0, count, count), minlength=count).astype(float)
+        out[repeat] = ap_per_iou(b, weights)[hb] - ap_per_iou(a, weights)[ha]
+    return out
+
+
 def interval(samples: np.ndarray, level: float = 0.95) -> tuple[float, float]:
     tail = (1.0 - level) / 2 * 100
     low, high = np.percentile(samples, [tail, 100 - tail])
