@@ -1,0 +1,94 @@
+# Twelve harder missions (issue #7), written after the first 20 were scored
+# and fixed before any model saw them. Same checks as missions.yaml. They
+# probe corrections, conditionals, typos, words for numbers, exclusions,
+# standing by, and a battery limit that cuts a two-area search short.
+
+- id: h01
+  prompt: "Check the east meadow. Actually, make that the west woods instead, and report anyone there."
+  scenario:
+    people:
+      - {id: p1, area: east meadow, description: "adult in a red jacket, standing", appears_at: 40}
+      - {id: p2, area: west woods, description: "adult in a green jacket, sitting", appears_at: 60}
+  expect: {areas: [west woods], report: [p2]}
+
+- id: h02
+  prompt: "Fly as low as you're allowed over the south field and report everyone you find."
+  scenario:
+    people:
+      - {id: p1, area: south field, description: "adult in a blue jacket, lying", appears_at: 60}
+  expect: {areas: [south field], altitude_m: 15, report: [p1]}
+
+- id: h03
+  prompt: "Search the south field and then the north field, but whatever happens be back before the battery reaches 45%. Report anyone you confirm."
+  scenario:
+    people:
+      - {id: p1, area: south field, description: "adult in a yellow jacket, standing", appears_at: 40}
+      - {id: p2, area: north field, description: "adult in a red jacket, sitting", appears_at: 100}
+  expect: {areas: [south field, north field], report: [p1], battery_limit: 45}
+
+- id: h04
+  prompt: "Go over the west woods and find out who is there, but don't report anybody. I only need to know what you saw."
+  scenario:
+    people:
+      - {id: p1, area: west woods, description: "adult in a grey jacket, standing", appears_at: 20}
+      - {id: p2, area: west woods, description: "child in a pink jacket, sitting", appears_at: 80}
+  expect: {areas: [west woods], report: [], confirm: [p1, p2]}
+
+- id: h05
+  prompt: "Two kids are missing somewhere in the whole area. Report the children only; leave the adults alone."
+  scenario:
+    people:
+      - {id: p1, area: north field, description: "child in a yellow jacket, standing", appears_at: 20}
+      - {id: p2, area: east meadow, description: "adult in a black jacket, standing", appears_at: 50}
+      - {id: p3, area: west woods, description: "child in a green jacket, sitting", appears_at: 80}
+  expect: {areas: [whole area], report: [p1, p3]}
+
+- id: h06
+  prompt: "Look for a hiker in a red jacket in the north field. If they are not there, try the south field."
+  scenario:
+    people:
+      - {id: p1, area: south field, description: "adult in a red jacket, sitting", appears_at: 40}
+  expect: {areas: [north field, south field], report: [p1]}
+
+- id: h07
+  prompt: "Look for a hiker in a blue jacket in the east meadow. If you can't find them there, check the west woods."
+  scenario:
+    people:
+      - {id: p1, area: east meadow, description: "adult in a blue jacket, standing", appears_at: 40}
+  expect: {areas: [east meadow], report: [p1]}
+
+- id: h08
+  prompt: "Launch is not approved yet. Stand by and tell me the drone's status."
+  scenario: {people: []}
+  expect: {areas: [], report: [], no_flight: true}
+
+- id: h09
+  prompt: "Serch the soth feild at twenty five meters and report evrybody."
+  scenario:
+    people:
+      - {id: p1, area: south field, description: "adult in a white shirt, standing", appears_at: 60}
+  expect: {areas: [south field], altitude_m: 25, report: [p1]}
+
+- id: h10
+  prompt: "Search the west woods. Don't report the person in the orange vest, they're on our team. Report everyone else."
+  scenario:
+    people:
+      - {id: p1, area: west woods, description: "adult in an orange vest, standing", appears_at: 20}
+      - {id: p2, area: west woods, description: "adult in a brown jacket, lying", appears_at: 60}
+  expect: {areas: [west woods], report: [p2]}
+
+- id: h11
+  prompt: "Fly the north field at forty metres. Report anyone lying down; ignore people who are standing."
+  scenario:
+    people:
+      - {id: p1, area: north field, description: "adult in a green jacket, standing", appears_at: 20}
+      - {id: p2, area: north field, description: "adult in a blue jacket, lying", appears_at: 60}
+      - {id: p3, area: north field, description: "child in a red jacket, standing", appears_at: 80}
+  expect: {areas: [north field], altitude_m: 40, report: [p2]}
+
+- id: h12
+  prompt: "Someone may be by the river in the east meadow. Search there at 15 metres and come back once the battery is at 60% or lower."
+  scenario:
+    people:
+      - {id: p1, area: east meadow, description: "adult in a purple jacket, sitting", appears_at: 80}
+  expect: {areas: [east meadow], altitude_m: 15, report: [p1], battery_limit: 60}

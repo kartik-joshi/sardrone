@@ -10,7 +10,7 @@ import json
 import pytest
 
 from sardrone.agent.agent import run_agent
-from sardrone.agent.evaluate import build_sim, check, load_missions, run_mission, summarise
+from sardrone.agent.evaluate import HARD_MISSIONS, build_sim, check, load_missions, run_mission, summarise
 from sardrone.agent.models import Reply, RuleBasedModel, ScriptedModel, ToolCall
 from sardrone.agent.sim import MissionSim, Person, Scenario
 from sardrone.agent.tools import TOOL_NAMES, TOOLS, call_tool
@@ -188,9 +188,12 @@ class ReferenceModel:
         return call("get_status")
 
 
-@pytest.mark.parametrize("mission_id", sorted(MISSIONS))
+HARD = {m["id"]: m for m in load_missions(HARD_MISSIONS)}
+
+
+@pytest.mark.parametrize("mission_id", sorted(MISSIONS) + sorted(HARD))
 def test_every_mission_is_solvable_and_a_correct_run_passes(mission_id):
-    mission = MISSIONS[mission_id]
+    mission = MISSIONS.get(mission_id) or HARD[mission_id]
     result = run_mission(ReferenceModel(mission), mission)
     assert result["success"], result["failed_checks"]
     assert result["valid_calls"] == result["calls"], "a correct run makes no rejected calls"
@@ -198,6 +201,13 @@ def test_every_mission_is_solvable_and_a_correct_run_passes(mission_id):
 
 def test_there_are_twenty_distinct_missions():
     assert len(MISSIONS) == 20 and len({m["prompt"] for m in MISSIONS.values()}) == 20
+
+
+def test_the_hard_set_is_twelve_new_missions():
+    assert len(HARD) == 12
+    prompts = {m["prompt"] for m in HARD.values()}
+    assert len(prompts) == 12 and not prompts & {m["prompt"] for m in MISSIONS.values()}
+    assert not set(HARD) & set(MISSIONS)
 
 
 def scripted(mission_id, script):
