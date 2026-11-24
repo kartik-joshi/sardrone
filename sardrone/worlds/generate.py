@@ -93,6 +93,11 @@ def generate(
 
     for tree_kind in {tree.kind for tree in spec.trees}:
         assets.require(assets.TREES[tree_kind], fuel_dir)
+    for item in spec.clutter:  # mesh distractors (content: rich)
+        if item.kind.startswith("vehicle:"):
+            assets.require(assets.VEHICLE_MODELS[item.kind.split(":", 1)[1]], fuel_dir)
+        elif item.kind == "rock_mesh":
+            assets.require(assets.ROCK_MODEL, fuel_dir)
     variants = {
         person.id: assets.clothing_variant(person.pose, person.clothing, fuel_dir, variant_dir)
         for person in spec.people

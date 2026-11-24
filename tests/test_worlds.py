@@ -719,3 +719,50 @@ def test_vehicle_world_file_has_cars_without_labels(tmp_path, fake_fuel):
         assert car.find("plugin") is None, "a car must never get a label box"
         names = [v.get("name") for v in car.findall("link/visual")]
         assert names[:3] == ["body", "cabin", "roof"] and sum(n.startswith("wheel") for n in names) == 4
+
+
+# ---- content: rich (issue #4) -------------------------------------------------
+
+
+def _rich_row(**kw):
+    from sardrone.worlds.matrix import VariationRow
+
+    return VariationRow(id="rich-001", world="meadow", seed=101, people=5, content="rich", vehicles=3, **kw)
+
+
+def test_rich_worlds_use_new_bodies_vehicle_meshes_and_rocks():
+    from sardrone.worlds.layout import build_world
+
+    spec = build_world(_rich_row(poses=("standing", "walking", "child", "sitting", "lying")))
+    poses = [p.pose for p in spec.people]
+    assert poses == ["standing", "walking", "child", "sitting", "lying"]
+    clothing = {p.pose: p.clothing for p in spec.people}
+    assert clothing["walking"] == clothing["child"] == "as modelled"
+    kinds = [c.kind for c in spec.clutter]
+    assert sum(k.startswith("vehicle:") for k in kinds) == 3 and "vehicle" not in kinds  # no box cars
+    assert 3 <= kinds.count("rock_mesh") <= 8
+    child = next(p for p in spec.people if p.pose == "child")
+    assert 1.0 < child.height_m < 1.3  # a child, about 1.14 m
+
+
+def test_rich_world_sdf_references_the_meshes_and_labels_only_people(tmp_path):
+    from sardrone.worlds import assets
+    from sardrone.worlds.layout import build_world
+    from sardrone.worlds.sdf import world_sdf
+
+    spec = build_world(_rich_row())
+    variants = {p.id: tmp_path / p.id for p in spec.people}
+    sdf = world_sdf(spec, fuel_dir=assets.FUEL_DIR, variant_dirs=variants,
+                    ground_texture=tmp_path / "g.jpg", ground_far_texture=tmp_path / "f.png")  # fmt: skip
+    assert "rock_mesh" in sdf and "FallingRock01.dae" in sdf
+    assert any(m in sdf for m in ("suv.obj", "pickup.dae", "fire_truck.obj"))
+    assert sdf.count("gz::sim::systems::Label") == len(spec.people)  # distractors carry no label
+
+
+def test_basic_rows_reject_rich_poses():
+    from sardrone.worlds.matrix import VariationRow
+
+    with pytest.raises(ValueError):
+        VariationRow(id="b", world="meadow", seed=1, people=1, poses=("child",))
+    with pytest.raises(ValueError):
+        VariationRow(id="b", world="meadow", seed=1, content="fancy")

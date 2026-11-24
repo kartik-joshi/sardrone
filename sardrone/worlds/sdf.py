@@ -146,9 +146,27 @@ def vehicle_sdf(index: int, item: ClutterSpec) -> str:
     )
 
 
-def clutter_sdf(index: int, item: ClutterSpec) -> str:
+def mesh_clutter_sdf(index: int, item: ClutterSpec, fuel_dir: Path) -> str:
+    """A distractor from a Fuel mesh (content: rich): a real vehicle or a rock.
+    No label plugin, like all clutter."""
+    from sardrone.worlds.assets import ROCK_MODEL, VEHICLE_MODELS
+
+    asset = VEHICLE_MODELS[item.kind.split(":", 1)[1]] if item.kind.startswith("vehicle:") else ROCK_MODEL
+    scale = asset.sdf_scale * item.size[0]
+    name = item.kind.replace(":", "_")
+    visual = _mesh_visual("v", fuel_dir / asset.key / asset.mesh, scale=scale)
+    return (
+        f'    <model name="clutter_{index:03d}_{name}"><static>true</static>'
+        f"{_pose(item.x, item.y, item.z, item.roll, item.pitch, item.yaw + asset.yaw_offset)}\n"
+        f'      <link name="link">\n{visual}      </link></model>\n'
+    )
+
+
+def clutter_sdf(index: int, item: ClutterSpec, fuel_dir: Path | None = None) -> str:
     """A distractor made of a plain shape. It carries NO label plugin, so
     the bounding-box sensor never draws a box around it."""
+    if item.kind.startswith("vehicle:") or item.kind == "rock_mesh":
+        return mesh_clutter_sdf(index, item, fuel_dir)
     if item.kind == "vehicle":
         return vehicle_sdf(index, item)
     a, b, c = item.size
@@ -252,7 +270,7 @@ def world_sdf(
     parts.append(ground_sdf(ground_texture, ground_far_texture))
     parts += [tree_sdf(i, tree, fuel_dir) for i, tree in enumerate(spec.trees, start=1)]
     parts += [person_sdf(person, variant_dirs[person.id]) for person in spec.people]
-    parts += [clutter_sdf(i, item) for i, item in enumerate(spec.clutter, start=1)]
+    parts += [clutter_sdf(i, item, fuel_dir) for i, item in enumerate(spec.clutter, start=1)]
     parts += [preview_camera_sdf(camera) for camera in preview_cameras]
     if include_drone:
         parts.append(

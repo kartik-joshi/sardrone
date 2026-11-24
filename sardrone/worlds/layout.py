@@ -16,8 +16,8 @@ import random
 from dataclasses import asdict, dataclass, field
 
 from sardrone.mcap.frames import Quat, Vec3, quat_from_rpy, rotate_vector
-from sardrone.worlds.assets import CLOTHING, CLOTHING_RANDOMIZED, PEOPLE, TREES
-from sardrone.worlds.matrix import POSES, VariationRow
+from sardrone.worlds.assets import CLOTHING, CLOTHING_RANDOMIZED, PEOPLE, ROCK_MODEL, TREES, VEHICLE_MODELS
+from sardrone.worlds.matrix import POSES, POSES_RICH, VariationRow
 from sardrone.worlds.sun import SunSpec, sun_for
 
 GZ_WORLD_NAME = "sar"
@@ -249,7 +249,8 @@ def _place_trees(row: VariationRow, rng: random.Random) -> list[TreeSpec]:
 
 def _place_people(row: VariationRow, trees: list[TreeSpec], rng: random.Random) -> list[PersonSpec]:
     half = row.area_m / 2 - 2.0
-    poses = list(row.poses) or [rng.choice(POSES) for _ in range(row.people)]
+    choices = POSES_RICH if row.content == "rich" else POSES
+    poses = list(row.poses) or [rng.choice(choices) for _ in range(row.people)]
     colours = list(CLOTHING_RANDOMIZED if row.randomize else CLOTHING)
     people: list[PersonSpec] = []
 
@@ -293,7 +294,7 @@ def _place_people(row: VariationRow, trees: list[TreeSpec], rng: random.Random) 
             PersonSpec(
                 id=f"person_{index}",
                 pose=pose,
-                clothing=rng.choice(colours),
+                clothing=rng.choice(colours) if PEOPLE[pose].recolour else "as modelled",
                 occlusion=row.occlusion,
                 x=x, y=y, z=z, roll=roll, pitch=0.0, yaw=yaw,
                 box_centre=centre, box_size=size, box_quat_wxyz=quat, scale=scale,
@@ -328,6 +329,11 @@ def _place_vehicles(row: VariationRow, people: list, trees: list, rng: random.Ra
                 break
         else:
             continue  # no room left; fewer vehicles rather than overlapping ones
+        if row.content == "rich":  # a real vehicle mesh; size holds its scale
+            model = rng.choice(sorted(VEHICLE_MODELS))
+            vehicles.append(ClutterSpec(f"vehicle:{model}", round(x, 3), round(y, 3), 0.0, 0.0, 0.0,
+                                        round(rng.uniform(0, 2 * math.pi), 4), (1.0, 1.0, 1.0), (1.0, 1.0, 1.0)))
+            continue
         length, width, height = VEHICLE_SIZE_M
         vehicles.append(
             ClutterSpec(
@@ -382,6 +388,26 @@ def _place_clutter(row: VariationRow, people: list[PersonSpec], rng: random.Rand
     return clutter
 
 
+def _place_rock_meshes(row: VariationRow, people: list, trees: list, rng: random.Random) -> list[ClutterSpec]:
+    """3 to 8 rock meshes (content: rich), 0.3 to 1.2 times the model's 1.5 m,
+    clear of people by 1.5 m and of the takeoff point. Real search photos are
+    full of stone; the basic worlds have none that looks like it."""
+    half = row.area_m / 2 - 2.0
+    rocks: list[ClutterSpec] = []
+    for _ in range(rng.randint(3, 8)):
+        for _ in range(100):
+            x, y = rng.uniform(-half, half), rng.uniform(-half, half)
+            if math.hypot(x, y) >= TAKEOFF_CLEAR_M and all(math.hypot(x - p.x, y - p.y) >= 1.5 for p in people):
+                break
+        else:
+            continue
+        scale = round(rng.uniform(0.3, 1.2), 3)
+        z = round(-ROCK_MODEL.lo[2] * scale * 0.7, 3)  # partly sunk into the ground
+        rocks.append(ClutterSpec("rock_mesh", round(x, 3), round(y, 3), z, 0.0, 0.0,
+                                 round(rng.uniform(0, 2 * math.pi), 4), (scale, scale, scale), (1.0, 1.0, 1.0)))
+    return rocks
+
+
 def build_world(row: VariationRow) -> WorldSpec:
     """The whole world for one matrix row. Same row -> same world, always."""
     trees = _place_trees(row, random.Random(f"{row.seed}:trees"))
@@ -390,6 +416,8 @@ def build_world(row: VariationRow) -> WorldSpec:
     clutter = _place_clutter(row, people, random.Random(f"{row.seed}:clutter")) if row.randomize else []
     # Vehicles have their own random stream, so adding them moves nothing else.
     clutter += _place_vehicles(row, people, trees, random.Random(f"{row.seed}:vehicles"))
+    if row.content == "rich":
+        clutter += _place_rock_meshes(row, people, trees, random.Random(f"{row.seed}:rocks"))
 
     tallest = max((t.height_m for t in trees), default=0.0)
     if row.altitude_m - tallest < MIN_CLEARANCE_ABOVE_TREES_M:

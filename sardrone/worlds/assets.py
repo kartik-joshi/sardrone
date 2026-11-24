@@ -47,6 +47,9 @@ class MeshAsset:
     recolour: str = ""  # "tint" (white garment) or "hue" (replace a hue band)
     # True when the mesh file names its own textures. Otherwise the SDF must.
     textured_by_mesh: bool = True
+    owner: str = "OpenRobotics"  # owner on Gazebo Fuel
+    sdf_scale: float = 1.0  # some meshes are not in metres; the model's own SDF scales them
+    yaw_offset: float = 0.0  # the model's own SDF turns some meshes to face +x
 
     @property
     def size(self) -> Vec:
@@ -77,6 +80,34 @@ PEOPLE = {
     ),
 }  # fmt: skip
 
+# More bodies, only in worlds with `content: rich` (matrix.py). Not recoloured:
+# they keep the clothing they were modelled with. Bounds measured with
+# mesh_bounds() on 2026-11-23.
+PEOPLE_RICH = {
+    "walking": MeshAsset(
+        "walking_person", "Walking person", "CC0-1.0", "meshes/walking.dae",
+        lo=(-0.27, -0.41, 0.02), hi=(0.28, 0.47, 1.89),
+    ),
+    "child": MeshAsset(
+        "visitor_kid_walk", "VisitorKidWalk", "CC-BY-4.0", "meshes/VisitorKidWalk.dae",
+        lo=(-0.09, -0.37, 0.0), hi=(0.13, 0.37, 1.14), owner="Luca",
+    ),
+}  # fmt: skip
+PEOPLE.update(PEOPLE_RICH)
+
+# Real vehicle meshes as unlabelled distractors (content: rich). Scales and
+# turns are those of each model's own model.sdf on Fuel; sizes after scaling.
+VEHICLE_MODELS = {
+    "suv": MeshAsset("suv", "SUV", "CC0-1.0", "meshes/suv.obj", lo=(-1.3, -2.4, 0.0), hi=(1.3, 2.6, 2.2),
+                     sdf_scale=0.06, yaw_offset=-1.5707963),
+    "pickup": MeshAsset("pickup", "Pickup", "CC0-1.0", "meshes/pickup.dae", lo=(-1.24, -2.95, 0.0),
+                        hi=(1.23, 2.71, 1.87), yaw_offset=-1.5707963),
+    "fire_truck": MeshAsset("fire_truck", "Fire truck", "CC0-1.0", "meshes/fire_truck.obj",
+                            lo=(-1.8, -6.5, 0.0), hi=(1.8, 5.9, 3.4), sdf_scale=0.1),
+}  # fmt: skip
+ROCK_MODEL = MeshAsset("falling_rock_1", "Falling Rock 1", "CC-BY-4.0", "meshes/FallingRock01.dae",
+                       lo=(-0.74, -0.74, -0.7), hi=(0.75, 0.74, 0.69))  # fmt: skip
+
 TREES = {
     "oak": MeshAsset(
         "oak_tree", "Oak tree", "CC0-1.0", "meshes/oak_tree.dae",
@@ -101,7 +132,8 @@ EXTRA = {
     ),
 }  # fmt: skip
 
-ALL_ASSETS = {**PEOPLE, **TREES, **EXTRA}
+ALL_ASSETS = {**PEOPLE, **TREES, **EXTRA, **{f"vehicle_{k}": v for k, v in VEHICLE_MODELS.items()},
+              "rock_mesh": ROCK_MODEL}
 
 # Clothing colours, chosen to include both easy (red, orange) and hard
 # (green, black: low contrast on grass or in shade) cases.
@@ -153,8 +185,8 @@ GROUND_PALETTES_RANDOMIZED = [
 
 
 def fuel_url(asset: MeshAsset) -> str:
-    name = urllib.parse.quote(asset.fuel_name)
-    return f"https://fuel.gazebosim.org/1.0/OpenRobotics/models/{name}/tip/{name}.zip"
+    name, owner = urllib.parse.quote(asset.fuel_name), urllib.parse.quote(asset.owner)
+    return f"https://fuel.gazebosim.org/1.0/{owner}/models/{name}/tip/{name}.zip"
 
 
 def is_fetched(asset: MeshAsset, fuel_dir: Path = FUEL_DIR) -> bool:
@@ -289,7 +321,10 @@ def clothing_variant(
     Built on first use and reused afterwards. The mesh and texture paths
     inside it are the same as in the original model folder.
     """
-    asset, rgb = PEOPLE[pose], CLOTHING_RANDOMIZED[colour]
+    asset = PEOPLE[pose]
+    if not asset.recolour:  # worn as modelled: use the model folder itself
+        return require(asset, fuel_dir)
+    rgb = CLOTHING_RANDOMIZED[colour]
     source = require(asset, fuel_dir)
     target = variant_dir / f"{asset.key}__{colour}"
     texture = target / asset.clothing_texture

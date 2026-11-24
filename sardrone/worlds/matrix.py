@@ -17,6 +17,10 @@ import yaml
 
 WORLDS = ("meadow", "forest_edge", "park")
 POSES = ("standing", "sitting", "lying")
+# content: rich adds two more bodies (a walking adult, a child), real vehicle
+# meshes and rock meshes. "basic" worlds are exactly as before.
+POSES_RICH = POSES + ("walking", "child")
+CONTENTS = ("basic", "rich")
 OCCLUSIONS = ("none", "partial")
 TIMES_OF_DAY = ("noon", "golden_hour", "dusk")
 # Only weather that is really simulated may be listed here. Fog was tried in
@@ -46,6 +50,9 @@ class VariationRow:
     # the detector's most confident mistakes were cars on grass, and the
     # simulated worlds had none.
     vehicles: int = 0
+    # "rich": more body types, real vehicle meshes instead of box-built cars,
+    # and rock meshes (issue #4). Own random streams; "basic" is unchanged.
+    content: str = "basic"
 
     def __post_init__(self):
         def check(value, allowed, what):
@@ -57,8 +64,9 @@ class VariationRow:
         check(self.time_of_day, TIMES_OF_DAY, "time_of_day")
         check(self.weather, WEATHERS, "weather")
         check(float(self.altitude_m), ALTITUDES_M, "altitude_m")
+        check(self.content, CONTENTS, "content")
         for pose in self.poses:
-            check(pose, POSES, "pose")
+            check(pose, POSES_RICH if self.content == "rich" else POSES, "pose")
         if not 1 <= self.people <= 5:
             raise ValueError(f"{self.id}: people must be 1..5, got {self.people}")
         if self.poses and len(self.poses) != self.people:

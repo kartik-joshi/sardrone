@@ -23,6 +23,32 @@ by `OpenRobotics` on Fuel.
 Fuel, https://fuel.gazebosim.org/1.0/OpenRobotics/models/Rescue%20Randy.
 This project recolours the jacket in its texture.
 
+### Added for `content: rich` worlds (issue #4)
+
+Fetched on 2026-11-23; licences as reported by the Fuel API that day. Only
+used in worlds whose matrix row sets `content: rich`; basic worlds are
+unchanged (test-002 regenerates byte for byte).
+
+| Model on Fuel | Owner | Used for | Licence | Download |
+| --- | --- | --- | --- | --- |
+| Walking person | OpenRobotics | person, walking (labelled) | CC0 1.0 | 26.1 MB |
+| VisitorKidWalk | Luca | person, child (labelled) | CC BY 4.0 | 0.6 MB |
+| SUV | OpenRobotics | parked vehicle (distractor) | CC0 1.0 | 1.9 MB |
+| Pickup | OpenRobotics | parked vehicle (distractor) | CC0 1.0 | 0.4 MB |
+| Fire truck | OpenRobotics | parked vehicle (distractor) | CC0 1.0 | 1.1 MB |
+| Falling Rock 1 | OpenRobotics | rocks, scaled 0.3 to 1.2 (distractor) | CC BY 4.0 | 4.2 MB |
+
+**Attribution (CC BY 4.0):** "VisitorKidWalk" by Luca, from Gazebo Fuel,
+https://fuel.gazebosim.org/1.0/Luca/models/VisitorKidWalk. "Falling Rock 1"
+by Open Robotics, from Gazebo Fuel,
+https://fuel.gazebosim.org/1.0/OpenRobotics/models/Falling%20Rock%201.
+Neither is modified.
+
+Considered and not used: "Juniper Tree" (shrijitsingh99) is byte for byte
+the "Pine Tree" mesh already used; "Casual female" and "Male visitor" have
+mesh transforms or poses the bounds measurement does not handle reliably;
+"Large Rock Fall" is a whole rock-slide scene, not one rock.
+
 ### How the models are changed
 
 - Only the mesh and texture files are used. The models' own `model.sdf`
