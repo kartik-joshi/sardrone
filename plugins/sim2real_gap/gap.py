@@ -258,6 +258,7 @@ def measure(sim_view, real_view, *, embeddings_field: str = "clip_embedding", mo
 
     if same:
         summary["views"] = save_views(sim_view, prefix, patches_field)
+        set_domain_colours(sim_view._dataset, f"{patches_field}.{prefix}_domain" if patches_field else f"{prefix}_domain")
         if brain_key:
             log("embedding map ...")
             summary["brain_key"] = embedding_map(sim_view, real_view, embeddings_field, patches_field, brain_key, seed)
@@ -308,6 +309,27 @@ def save_views(sim_view, prefix: str, patches_field: str | None) -> dict:
     dataset.save_view(names["realistic_sim"], realistic, overwrite=True)
     dataset.save_view(names["uncovered_real"], uncovered, overwrite=True)
     return names
+
+
+# Blue for simulated, orange for real: distinct for colour-blind viewers and
+# readable on the App's dark background (checked with a CVD validator).
+DOMAIN_COLOURS = {"sim": "#3987e5", "real": "#e8833a"}
+
+
+def set_domain_colours(dataset, path: str) -> bool:
+    """Give the domain field readable colours in the App, unless the user has
+    already chosen colours for that field. Returns True if it set them."""
+    import fiftyone as fo
+
+    scheme = dataset.app_config.color_scheme or fo.ColorScheme()
+    fields = list(scheme.fields or [])
+    if any(f.get("path") == path for f in fields):
+        return False
+    fields.append({"path": path, "valueColors": [{"value": v, "color": c} for v, c in DOMAIN_COLOURS.items()]})
+    scheme.fields = fields
+    dataset.app_config.color_scheme = scheme
+    dataset.save()
+    return True
 
 
 def embedding_map(sim_view, real_view, embeddings_field: str, patches_field: str | None, brain_key: str,

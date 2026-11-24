@@ -231,3 +231,15 @@ def test_groups_are_still_ranked_when_separability_saturates():
     far = gap.normalise(cloud(rng, 0, 40) + np.r_[np.zeros(16), np.full(16, 9.0)] + np.r_[np.full(16, -3.0), np.zeros(16)])
     assert gap.separability(near, real)[0] > 0.95 and gap.separability(far, real)[0] > 0.95
     assert gap.frechet_distance(near, real) < gap.frechet_distance(far, real)
+
+
+def test_domain_colours_are_set_once_and_never_override_the_user(tiny):
+    assert gap.set_domain_colours(tiny, "s2r_domain") is True
+    entry = next(f for f in tiny.app_config.color_scheme.fields if f["path"] == "s2r_domain")
+    assert {v["value"] for v in entry["valueColors"]} == {"sim", "real"}
+    assert gap.set_domain_colours(tiny, "s2r_domain") is False  # already there: left alone
+    tiny.app_config.color_scheme.fields = [{"path": "mine", "fieldColor": "#ff00ff"}]
+    tiny.save()
+    gap.set_domain_colours(tiny, "s2r_domain")
+    paths = [f["path"] for f in tiny.app_config.color_scheme.fields]
+    assert paths == ["mine", "s2r_domain"]  # the user's entry is kept

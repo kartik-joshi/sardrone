@@ -31,7 +31,7 @@ search-and-rescue drone in simulation. Comparing 300 simulated frames with
 - **The real images least covered by the simulation**, top of the
   `s2r-uncovered-real` view, unprompted:
 
-![Real drone photos least like any simulated frame: off-road vehicles, parked cars, gravel roads, a pond, tall grass](example_uncovered_real.jpg)
+![The s2r-uncovered-real view in the FiftyOne App: real drone photos least like any simulated frame, led by an off-road vehicle on a gravel road and parked cars by a pond](app_uncovered.jpg)
 
   Off-road vehicles, parked cars, gravel roads, a pond, tall dry grass. None
   of them exist in the simulated worlds, and cars were also the detector's
@@ -72,13 +72,20 @@ ViT-S/14), downloaded on first use. Existing embeddings are reused.
 2. Press the backtick key (`` ` ``) and run **Measure the sim-to-real gap**:
    pick the two sets, images or objects, a model, and optionally a field to
    break down by.
-3. Read the report, then:
+3. Read the report:
+
+   ![The report: separability with its spread, sanity checks, Frechet distance, and a breakdown by world](app_report.jpg)
+
+   Then:
    - open the saved view **`s2r-uncovered-real`**: what the simulation is
      missing, worst first;
    - open **`s2r-realistic-sim`**: the most real-looking synthetic images;
    - sort or filter any view by **`s2r_realism`** or **`s2r_nearest`**;
    - open the Embeddings panel, choose the brain key, colour by
-     **`s2r_domain`**.
+     **`s2r_domain`** (the plugin sets readable colours for it unless you
+     have chosen your own).
+
+   ![The Embeddings panel: simulated and real images as separate islands](app_map.jpg)
 4. Optionally run **Review a detector's false alarms or misses** on your
    predictions, and save the result as a view.
 

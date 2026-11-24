@@ -51,7 +51,7 @@ def report(summary: dict) -> str:
         f"### Separability: **{pct(summary['separability'])}** (± {pct(summary['separability_std'])} across folds)",
         f"_{summary['verdict']}_",
         "",
-        "| | |",
+        "| Check | Value |",
         "| --- | --- |",
         f"| Sanity: simulated vs simulated | {pct(summary['sanity_sim_vs_sim'])} (should be near 50 %) |",
         f"| Sanity: real vs real | {pct(summary['sanity_real_vs_real'])} (should be near 50 %) |",
