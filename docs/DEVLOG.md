@@ -1602,3 +1602,29 @@ not ready). Table: `docs/results/closed_loop_v4_floor_second_pass.md`.
 - One flight per world: a difference of one person may be noise. But the
   issue's bar (more than 10 of 15 with no false report) is not met; #5
   stays open. A next try would combine persistence with a wider orbit.
+
+## Protecting the network in simulation-only training (issue #3, 2026-11-24)
+
+Two variants of v1 (simulated frames only, export d741bdbb19fbe45d, which
+rebuilt exactly from its recorded settings), one run each:
+
+- v9: `--freeze 23`, everything but the detection layer frozen. Commit
+  e21958c, clean, 96 minutes.
+- v10: `--optimizer AdamW --lr0 0.0002`, 10x below the 0.002 Ultralytics
+  chose automatically for v1 (the log confirms AdamW at 0.0002). 177
+  minutes; recorded `dirty: true` only because v9's evaluation had just
+  added its scorecard row.
+
+| | Sim-test | Real SARD | HERIDAL | HERIDAL max recall |
+| --- | --- | --- | --- | --- |
+| v1, all layers | 0.947 | 0.014 | 0.030 | 0.16 |
+| v10, 10x lower lr | 0.945 | 0.025 | 0.059 | 0.29 |
+| v5, backbone frozen | 0.943 | 0.127 | | |
+| v9, detection layer only | 0.912 | 0.435 (0.418 to 0.458) | 0.264 (0.184 to 0.360) | 0.67 |
+
+- A lower learning rate does almost nothing. Freezing more of the network
+  does a lot: most of the damage is in the neck.
+- v9 is still below the untrained v0 on SARD (0.591) but, with no real
+  images, scores level with v6 on HERIDAL and finds the most people there
+  of any untiled model. One run, overlapping intervals.
+- Next: v9's freezing with v4's 300 real images, over seeds.

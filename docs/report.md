@@ -103,6 +103,8 @@ version. Each version changes one thing:
 | v6 | v4 with the simulated frames taken from the randomized flights instead | `1acc17da393128c2` |
 | v7 | v6 recipe on randomized worlds with 1 to 3 box-built parked cars | `e411d1520339f4fb` |
 | v8 | v4 on all 24,667 simulated training frames instead of a 6,000 sample | `c09b4aca41099b26` |
+| v9 | v1's frames, everything but the detection layer (module 23) frozen | `d741bdbb19fbe45d` |
+| v10 | v1's frames, AdamW at a learning rate of 0.0002 (v1: 0.002, chosen automatically) | `d741bdbb19fbe45d` |
 
 v0 was not in the original plan. It was added as a reference and turned
 out to matter most. v5 and v6 were added after v1 to v4 to answer two
@@ -146,6 +148,8 @@ Source: `docs/results/scorecard.csv`.
 | v6 v4 on randomized worlds | 0.926 (0.922 to 0.931) | 0.597 (0.580 to 0.617) | 0.329 (0.307 to 0.346) | 0.51 / 0.70 |
 | v7 v6 + box-built cars | 0.933 (0.928 to 0.938) | 0.498 (0.479 to 0.519) | 0.435 (0.414 to 0.454) | 0.59 / 0.61 |
 | v8 v4 on all sim frames | 0.946 (0.942 to 0.948) | 0.483 (0.465 to 0.507) | 0.462 (0.440 to 0.481) | 0.73 / 0.40 |
+| v9 v1, detection layer only | 0.912 (0.906 to 0.919) | 0.435 (0.418 to 0.458) | 0.477 (0.453 to 0.497) | 0.59 / 0.53 |
+| v10 v1, 10x lower learning rate | 0.945 (0.942 to 0.951) | 0.025 (0.022 to 0.029) | 0.920 (0.915 to 0.927) | 0.18 / 0.04 |
 
 mAP@0.5:0.95 on SARD: v0 0.301, v1 0.007, v2 0.013, v3 0.005, v4 0.235,
 v5 0.041, v6 0.255.
@@ -242,6 +246,25 @@ cut-offs chosen on 294 real SARD photos that no model trained on, tiled and
 untiled detection perform alike on SARD, while on HERIDAL tiling finds
 about twice as many people (v6 recall 0.29 to 0.55) at lower precision
 (0.49 to 0.30). Source: `docs/results/tiled_cutoffs.csv`.
+
+**Finding 10. Where simulation-only training does its damage.** All on v1's
+6,000 simulated frames, no real images, one run each:
+
+| Version | Trains | Real SARD mAP@0.5 | HERIDAL mAP@0.5 | HERIDAL max recall |
+| --- | --- | --- | --- | --- |
+| v1 | every layer | 0.014 | 0.030 | 0.16 |
+| v10 | every layer, 10x lower learning rate | 0.025 | 0.059 | 0.29 |
+| v5 | neck and head (backbone frozen) | 0.127 | not scored | |
+| v9 | the detection layer only | 0.435 (0.418 to 0.458) | 0.264 (0.184 to 0.360) | 0.67 |
+
+Learning more slowly barely helps; freezing more does. Most of the loss is
+in the neck, the layers between the backbone's features and the detection
+layer. v9 is still below the untrained v0 on SARD (0.591), and pays for it
+on simulation (0.912 against 0.947). On HERIDAL, with no real images at
+all, it scores level with v6, which trained on 300 real SARD photos
+(0.262), and has the highest max recall of any untiled model (0.67). One
+run, overlapping intervals: a direction to test with seeds and with real
+images added, not yet a result to rely on.
 
 ### Precision-recall curves
 
@@ -464,8 +487,8 @@ mission is unaffected because identity is decided from ground position.
 2. Choose cut-offs on validation photos that resemble the target footage:
    a cut-off chosen on SARD-like photos trades recall for precision on
    HERIDAL (Finding 9).
-3. Protect the head as well as the backbone: a lower learning rate, or
-   freezing the neck, in simulation-only training.
+3. Combine Finding 10 with real images: v9's freezing plus the 300 real
+   images of v4, over several seeds.
 4. Widen the simulated content (more bodies, vegetation, terrain) before
    spending more on rendering fidelity, since content is where the domains
    differ.
