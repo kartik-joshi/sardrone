@@ -57,6 +57,10 @@ def load_env_file(path: Path = PROJECT_ROOT / ".env") -> None:
             os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
+class MonthlyLimitReached(RuntimeError):
+    """The API key has no calls left this month."""
+
+
 class CohereModel:
     """Cohere chat with tool use, through the official SDK's v2 client.
 
@@ -114,7 +118,13 @@ class CohereModel:
                     seed=self.seed,
                 )
                 break
-            except TooManyRequestsError:
+            except TooManyRequestsError as error:
+                # Two different limits answer 429: calls per minute (wait and
+                # retry) and calls per month (retrying cannot help: stop).
+                if "month" in str(getattr(error, "body", "") or error).lower():
+                    raise MonthlyLimitReached(
+                        "the Cohere trial key's monthly call limit is used up; it resets next month"
+                    ) from error
                 if attempt == self.max_retries:
                     raise
                 self.rate_limited += 1

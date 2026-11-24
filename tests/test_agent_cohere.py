@@ -217,3 +217,21 @@ def test_a_429_is_retried_with_the_identical_request():
 
     with pytest.raises(TooManyRequestsError):
         model.reply([{"role": "user", "content": "status?"}], TOOLS)
+
+
+def test_the_monthly_limit_stops_at_once_instead_of_retrying():
+    from cohere.errors import TooManyRequestsError
+
+    from sardrone.agent.models import MonthlyLimitReached
+    from sardrone.agent.tools import TOOLS
+
+    class MonthlyLimited(FakeClient):
+        def chat(self, **request):
+            self.requests.append(request)
+            raise TooManyRequestsError(body={"message": "You are using a Trial key, which is limited to 1000 API calls / month."})
+
+    model = adapter([])
+    model._client = MonthlyLimited([])
+    with pytest.raises(MonthlyLimitReached):
+        model.reply([{"role": "user", "content": "status?"}], TOOLS)
+    assert len(model._client.requests) == 1 and model.rate_limited == 0
