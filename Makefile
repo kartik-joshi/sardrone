@@ -23,7 +23,7 @@ SIDE      ?= 30
 # Who looks for people: `oracle` reads ground truth; a model version (v4) looks at the images.
 DETECTOR  ?= oracle
 
-.PHONY: venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap pipeline agent-eval agent-record curves false-alarms real-voc extra-real
+.PHONY: hooks venv test synthetic sim record record-fake view clean assets world worlds preview sim-world record-world search search-fake batch batch-fake frames overlay curate autolabel sard export smoke-train train evaluate gapmap pipeline agent-eval agent-record curves false-alarms real-voc extra-real
 
 # ---- installation (each stamp file means "this group is installed") ---------
 
@@ -223,3 +223,10 @@ view: $(VENV)/.dev $(VENV)/.view
 
 clean:
 	rm -rf $(VENV) .pytest_cache *.egg-info
+
+# Install the git hooks that block secrets and private information before commit and push.
+# Personal patterns (names, addresses) go in .git/info/secret-patterns, which is never committed.
+hooks:
+	cp scripts/hooks/pre-commit scripts/hooks/pre-push .git/hooks/
+	chmod +x .git/hooks/pre-commit .git/hooks/pre-push
+	@echo "hooks installed in .git/hooks"
