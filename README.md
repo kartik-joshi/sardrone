@@ -34,6 +34,8 @@ than not training it at all.**
 | v8 | v4 on all 24,667 simulated frames (4x) | 0.946 | 0.483 | 0.462 |
 | v9 | v1, only the final detection layer trains | 0.912 | 0.435 | 0.477 |
 | v10 | v1 with a 10x lower learning rate | 0.945 | 0.025 | 0.920 |
+| v11 | v8 with all 594 SARD pool images (2.4 % real) | 0.945 | 0.506 | 0.439 |
+| v12 | v8 with its 300 real images repeated 4x (4.6 % real) | 0.946 | 0.544 | 0.402 |
 
 The pretrained network already found half the real people. Ten epochs on
 simulated frames taught it to find 93 % of simulated people and left it
@@ -45,6 +47,9 @@ real-world ability than training every layer, and was still far short;
 freezing the neck as well (v9) kept 0.435, thirty times v1, with no real
 images at all. A 10x lower learning rate (v10) kept almost nothing: what
 matters is which layers learn, not how fast.
+Four times the simulated data (v8) scored lower on real photos only
+because the real images became a smaller share of training: with the share
+restored (v12, 4.6 %), the score is back in v4's range.
 Randomization did not measurably help, alone or with real images: three
 training runs each of v4 and v6 average 0.555 and 0.570 on real photos,
 and each recipe's runs spread over 0.05 to 0.07. Full table with 95 % bootstrap intervals:
@@ -260,8 +265,8 @@ PX4's own clock, battery reported on a 0 to 100 scale.
   0.60 against 0.38).
   ([docs/results/extra_real.csv](docs/results/extra_real.csv))
 - **Small-scale training.** Each model saw a seeded 6,000-frame sample for
-  10 epochs (v8 saw all 24,667 frames and scored lower on real photos,
-  but its real share was a quarter of v4's, so the two causes are mixed). v4 and v6 were each trained three times; their real-image
+  10 epochs; v8, v11 and v12 saw all 24,667 (see #2: the real share,
+  not the extra simulation, explained v8's lower score; one seed each). v4 and v6 were each trained three times; their real-image
   scores spread over 0.053 and 0.072, so differences between versions
   smaller than that are not meaningful.
   ([docs/results/seed_runs.md](docs/results/seed_runs.md)) The intervals cover the choice of test
@@ -298,7 +303,7 @@ v1.0 is complete; work continues. Each item is an issue in the
 1. ~~**Tiled detection** on full-resolution images.~~ Done: up to +0.14
    mAP@0.5 on HERIDAL (finding 6), with cut-offs chosen on real photos.
    ([#1](https://github.com/kartik-joshi/sardrone/issues/1))
-2. **Untangle v8:** more simulation, or a smaller real share? ([#2](https://github.com/kartik-joshi/sardrone/issues/2))
+2. ~~**Untangle v8:** more simulation, or a smaller real share?~~ Done: the real share. With all simulated frames and 4.6 % real, SARD is back to 0.544, in v4's range. ([#2](https://github.com/kartik-joshi/sardrone/issues/2))
 3. ~~**Protect more of the network**~~ Done: freezing up to the detection layer keeps 0.435 on real photos from simulation alone. ([#3](https://github.com/kartik-joshi/sardrone/issues/3))
 4. **Richer simulated content:** real vehicle models, more body types,
    vegetation and uneven terrain. ([#4](https://github.com/kartik-joshi/sardrone/issues/4))

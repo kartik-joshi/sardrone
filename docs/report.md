@@ -105,6 +105,8 @@ version. Each version changes one thing:
 | v8 | v4 on all 24,667 simulated training frames instead of a 6,000 sample | `c09b4aca41099b26` |
 | v9 | v1's frames, everything but the detection layer (module 23) frozen | `d741bdbb19fbe45d` |
 | v10 | v1's frames, AdamW at a learning rate of 0.0002 (v1: 0.002, chosen automatically) | `d741bdbb19fbe45d` |
+| v11 | v8 with all 594 SARD pool images instead of 300 (2.4 % real) | `0bed5c53134d98f3` |
+| v12 | v8 with its 300 real images repeated 4x (4.6 % real); resumed after epoch 6 | `a31d75ef2142dfc0` |
 
 v0 was not in the original plan. It was added as a reference and turned
 out to matter most. v5 and v6 were added after v1 to v4 to answer two
@@ -150,6 +152,8 @@ Source: `docs/results/scorecard.csv`.
 | v8 v4 on all sim frames | 0.946 (0.942 to 0.948) | 0.483 (0.465 to 0.507) | 0.462 (0.440 to 0.481) | 0.73 / 0.40 |
 | v9 v1, detection layer only | 0.912 (0.906 to 0.919) | 0.435 (0.418 to 0.458) | 0.477 (0.453 to 0.497) | 0.59 / 0.53 |
 | v10 v1, 10x lower learning rate | 0.945 (0.942 to 0.951) | 0.025 (0.022 to 0.029) | 0.920 (0.915 to 0.927) | 0.18 / 0.04 |
+| v11 v8, all 594 pool images | 0.945 (0.939 to 0.947) | 0.506 (0.485 to 0.528) | 0.439 (0.416 to 0.459) | 0.67 / 0.55 |
+| v12 v8, 300 real images x4 | 0.946 (0.943 to 0.952) | 0.544 (0.526 to 0.566) | 0.402 (0.380 to 0.421) | 0.67 / 0.64 |
 
 mAP@0.5:0.95 on SARD: v0 0.301, v1 0.007, v2 0.013, v3 0.005, v4 0.235,
 v5 0.041, v6 0.255.
@@ -208,6 +212,8 @@ and licence in DETAILS.md). Scores from `docs/results/extra_real.csv`:
 | v6, v4 + randomized worlds | 0.262 (0.179 to 0.358) | 0.60 |
 | v7, v6 + box-built cars | 0.213 (0.142 to 0.302) | 0.55 |
 | v8, v4 on all sim frames | 0.261 (0.174 to 0.355) | 0.59 |
+| v11, v8 + all 594 pool images | 0.150 (0.094 to 0.221) | 0.52 |
+| v12, v8 + 300 images x4 | 0.215 (0.150 to 0.287) | 0.52 |
 
 Simulation-only training collapses again (0.030). The models that saw 300
 SARD images score above the untrained v0, though with only 101 images the
@@ -223,6 +229,17 @@ HERIDAL it scored 0.261, inside v4's interval. One run, and confounded:
 the same 300 real images were 4.8 % of v4's training set and 1.2 % of
 v8's, so a smaller real share explains the result as well as more
 simulation does.
+
+*Follow-up (issue #2).* Two more runs keep all 24,667 simulated frames and
+raise the real share: v11 (all 594 SARD pool images, 2.4 %) and v12 (the
+same 300 images repeated 4x, 4.6 %). On SARD the score rises with the
+share, 0.483 (v8) → 0.506 (v11) → 0.544 (v12), and v12 is back inside v4's
+range. **The smaller real share explains v8's drop, not the extra
+simulation.** Weight mattered more than variety here: 300 repeated images
+beat 594 different ones at half the share, though their intervals only just
+touch. HERIDAL does not follow the same order (v11 0.150, v12 0.215, v8
+0.261, with wide, overlapping intervals). One training seed per run; v12
+resumed after epoch 6 from its checkpoint.
 
 **Finding 9. Full-resolution tiles help every useful model on HERIDAL.**
 Source: `docs/results/tiled.md`. The method was fixed before scoring: 1280
@@ -501,9 +518,9 @@ mission is unaffected because identity is decided from ground position.
 
 ## 7. What I would do next
 
-1. Separate the two causes in v8: train on all simulated frames with the
-   real share held up, by using all 594 SARD pool images or repeating the
-   300 to make 5 %, over several seeds.
+1. ~~Separate the two causes in v8.~~ Done (Finding 8, follow-up): the real
+   share explains it. More seeds of v11 and v12 would firm up the ranking
+   between them.
 2. Choose cut-offs on validation photos that resemble the target footage:
    a cut-off chosen on SARD-like photos trades recall for precision on
    HERIDAL (Finding 9).
