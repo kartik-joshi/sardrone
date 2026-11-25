@@ -9,6 +9,8 @@ intervals. Gap = simulated minus real: the smaller, the better the transfer.
 | v0 | reference: COCO-pretrained YOLO11n, no training on our data | 0.453 (0.440 to 0.465) | 0.591 (0.574 to 0.607) | -0.138 (-0.159 to -0.117) | 0.65 / 0.45 | 0.83 / 0.51 | 0 | `none (no training)` | `8c45a3c` |
 | v1 | baseline: simulation only | 0.947 (0.944 to 0.953) | 0.014 (0.009 to 0.019) | 0.933 (0.927 to 0.941) | 0.98 / 0.93 | 0.19 / 0.01 | 5999 | `d741bdbb19fbe45d` | `8c45a3c` |
 | v10 | v1 with a 10x lower learning rate (AdamW 0.0002) | 0.945 (0.942 to 0.951) | 0.025 (0.022 to 0.029) | 0.920 (0.915 to 0.927) | 0.97 / 0.93 | 0.18 / 0.04 | 5999 | `d741bdbb19fbe45d` | `691c680` |
+| v11 | v8 with all 594 SARD pool images (2.4 % real) | 0.945 (0.939 to 0.947) | 0.506 (0.485 to 0.528) | 0.439 (0.416 to 0.459) | 0.98 / 0.93 | 0.67 / 0.55 | 25261 | `0bed5c53134d98f3` | `816a54c` |
+| v12 | v8 with its 300 real images repeated 4x (4.6 % real) | 0.946 (0.943 to 0.952) | 0.544 (0.526 to 0.566) | 0.402 (0.380 to 0.421) | 0.98 / 0.93 | 0.67 / 0.64 | 25867 | `a31d75ef2142dfc0` | `23cd313` |
 | v2 | v1 recipe on domain-randomized worlds (ground, light, clothing, body size, clutter) | 0.934 (0.931 to 0.941) | 0.032 (0.029 to 0.038) | 0.902 (0.896 to 0.910) | 0.98 / 0.91 | 0.27 / 0.04 | 6000 | `61b514bcb1580625` | `6b78b87` |
 | v3 | v1 + camera realism on training images (noise, blur, JPEG, exposure) | 0.941 (0.935 to 0.945) | 0.020 (0.017 to 0.023) | 0.921 (0.913 to 0.925) | 0.98 / 0.92 | 0.13 / 0.02 | 5999 | `86479461bb4f3bb7` | `d3c4e34` |
 | v4 | v3 + 300 real images (5 %) from sard-train-pool | 0.934 (0.931 to 0.941) | 0.547 (0.529 to 0.570) | 0.387 (0.364 to 0.408) | 0.98 / 0.92 | 0.70 / 0.58 | 6299 | `7918bf71d200e0da` | `fe30b89` |

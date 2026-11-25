@@ -1656,3 +1656,45 @@ Scores (mAP@0.5, scorecard cut-offs, nothing tuned on WiSARD):
   WiSARD rows, dropping HERIDAL's and SARD's. Restored from git; the file
   is now merged row by row (tested).
 - Still open in #9: continuous real video, to test the tracker.
+
+## Untangling v8: more simulation, or a smaller real share? (issue #2, 2026-11-25)
+
+v8 trained v4's recipe on all 24,667 simulated frames. It scored 0.483 on
+real SARD photos, below every v4 run (0.532 to 0.586 over three seeds). But
+its 300 real images fell from 4.8 % to 1.2 % of training, so two causes were
+mixed. Two follow-ups keep all the simulated frames and raise the real share
+back:
+
+| Version | Simulated frames | Real images | Real share | SARD mAP@0.5 (95 % interval) | HERIDAL mAP@0.5 (95 % interval) |
+|---|---|---|---|---|---|
+| v4 (3 seeds) | 6,000 | 300 | 4.8 % | 0.532 to 0.586 | 0.231 (0.154 to 0.324), seed 51 |
+| v8 | 24,667 | 300 | 1.2 % | 0.483 (0.465 to 0.507) | 0.261 (0.174 to 0.355) |
+| v11 | 24,667 | 594 (all SARD pool images) | 2.4 % | 0.506 (0.485 to 0.528) | 0.150 (0.094 to 0.221) |
+| v12 | 24,667 | 300, each repeated 4x | 4.6 % | **0.544 (0.526 to 0.566)** | 0.215 (0.150 to 0.287) |
+
+### What it says
+- **On SARD, the real share explains v8's drop, not the extra simulation.**
+  With all simulated frames and the real share back to 4.6 % (v12), the score
+  returns to v4's range (0.532 to 0.586). The real share rises from v8 to v11
+  to v12, and so does the score: 0.483 → 0.506 → 0.544.
+- **Weight mattered more than variety here.** v12 (300 images, repeated) beat
+  v11 (594 different images, at half the share). Their intervals only just
+  touch (v11 up to 0.528, v12 from 0.526).
+- **HERIDAL, which no model trained on, does not follow.** v8 (0.261) is no
+  worse than v4 (0.231), and v11 is lowest (0.150). With 101 images the
+  intervals overlap widely, so there is no clear order on HERIDAL. More
+  weight on SARD photos tunes the model to SARD; it does not obviously help
+  on other real data.
+
+### How far to trust this
+- **One training seed each for v11 and v12.** The issue planned three. We
+  chose one, because v11 alone trained for 10.6 h, so two more seeds per
+  recipe would be about 42 more GPU hours. v4's three seeds span 0.054, so a
+  single run can land anywhere in a range that wide. "v12 is back in v4's
+  range" is solid; "v12 beats v11" is not.
+- **v12 was interrupted after epoch 6**, when the app session running the
+  queue ended. It resumed from `last.pt` with its optimizer state
+  (`run.json`: `"resumed": true`; 257 min after the resume). The queue now
+  runs detached, so this cannot happen again.
+- v12 repeats 300 images rather than adding new ones: more weight, not more
+  variety.
