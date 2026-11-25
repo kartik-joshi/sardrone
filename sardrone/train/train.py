@@ -76,8 +76,12 @@ def weights_dir() -> Path:
 
 
 def train(export_dir: Path, version: str, config: TrainConfig | None = None,
-          train_root: Path = DEFAULT_TRAIN_ROOT, commit=("unknown", False)) -> dict:  # fmt: skip
-    """Run one training and write run.json. Returns the run record."""
+          train_root: Path = DEFAULT_TRAIN_ROOT, commit=("unknown", False), resume: bool = False) -> dict:  # fmt: skip
+    """Run one training and write run.json. Returns the run record.
+
+    `resume=True` continues an interrupted run from its `weights/last.pt`
+    (the last finished epoch, with the optimizer state), using the settings
+    saved in that checkpoint; run.json then says so."""
     import torch
     import ultralytics
     from ultralytics import YOLO
@@ -87,18 +91,24 @@ def train(export_dir: Path, version: str, config: TrainConfig | None = None,
     export = json.loads((export_dir / "export.json").read_text())
     run_dir = Path(train_root) / version
 
-    model = YOLO(str(weights_dir() / BASE_WEIGHTS))  # downloaded here on first use
     started = time.monotonic()
-    results = model.train(
-        data=str(export_dir / "dataset.yaml"),
-        project=str(run_dir.parent),
-        name=run_dir.name,
-        exist_ok=True,
-        deterministic=True,
-        plots=True,
-        verbose=False,
-        **asdict(config),
-    )
+    if resume:
+        last = run_dir / "weights" / "last.pt"
+        if not last.exists():
+            raise FileNotFoundError(f"nothing to resume: {last} does not exist")
+        results = YOLO(str(last)).train(resume=True)
+    else:
+        model = YOLO(str(weights_dir() / BASE_WEIGHTS))  # downloaded here on first use
+        results = model.train(
+            data=str(export_dir / "dataset.yaml"),
+            project=str(run_dir.parent),
+            name=run_dir.name,
+            exist_ok=True,
+            deterministic=True,
+            plots=True,
+            verbose=False,
+            **asdict(config),
+        )
     metrics = {key: round(float(value), 4) for key, value in (results.results_dict or {}).items()}
     record = {
         "version": version,
@@ -109,7 +119,8 @@ def train(export_dir: Path, version: str, config: TrainConfig | None = None,
         "base_weights": BASE_WEIGHTS,
         "config": asdict(config),
         "val_metrics": metrics,  # Ultralytics' own validation numbers, on the val split
-        "minutes": round((time.monotonic() - started) / 60, 1),
+        "minutes": round((time.monotonic() - started) / 60, 1),  # of this process only, if resumed
+        "resumed": resume,
         "weights": str(run_dir / "weights" / "best.pt"),
         "commit": commit[0],
         "dirty": commit[1],
@@ -136,13 +147,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--freeze", type=int, help="freeze the first N modules (11 = the whole backbone)")
     parser.add_argument("--optimizer", help="e.g. AdamW; 'auto' (default) ignores --lr0")
     parser.add_argument("--lr0", type=float, help="starting learning rate (needs --optimizer)")
+    parser.add_argument("--resume", action="store_true",
+                        help="continue an interrupted run from runs/train/<version>/weights/last.pt")  # fmt: skip
     args = parser.parse_args(argv)
 
     config = TrainConfig()
     for key in ("epochs", "imgsz", "batch", "device", "workers", "freeze", "seed", "optimizer", "lr0"):
         if getattr(args, key) is not None:
             setattr(config, key, getattr(args, key))
-    record = train(DEFAULT_EXPORT_ROOT / args.export, args.version, config, commit=git_commit())
+    record = train(DEFAULT_EXPORT_ROOT / args.export, args.version, config, commit=git_commit(), resume=args.resume)
     print(json.dumps({k: record[k] for k in ("version", "export_hash", "train_images", "val_metrics", "minutes", "weights")}, indent=2))
     return 0
 
