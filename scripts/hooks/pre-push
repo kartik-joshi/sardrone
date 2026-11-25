@@ -1,6 +1,6 @@
 #!/bin/bash
 # Re-check every commit about to be pushed, plus private files and private branches (installed by `make hooks`).
-top="$(git rev-parse --show-toplevel)"
+root="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"  # the main checkout, also from a worktree
 zero=0000000000000000000000000000000000000000
 ranges=(); branches=()
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -14,4 +14,4 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   fi
 done
 [ ${#ranges[@]} -eq 0 ] && [ ${#branches[@]} -eq 0 ] && exit 0
-exec "$top/.venv/bin/python" "$top/scripts/check_secrets.py" --push "${ranges[@]}" "${branches[@]}"
+exec "$root/.venv/bin/python" "$root/scripts/check_secrets.py" --push "${ranges[@]}" "${branches[@]}"

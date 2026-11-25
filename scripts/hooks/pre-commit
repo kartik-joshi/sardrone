@@ -1,3 +1,4 @@
 #!/bin/bash
 # Block secrets and private information in staged changes (installed by `make hooks`).
-exec "$(git rev-parse --show-toplevel)/.venv/bin/python" "$(git rev-parse --show-toplevel)/scripts/check_secrets.py" --staged
+root="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"  # the main checkout, also from a worktree
+exec "$root/.venv/bin/python" "$root/scripts/check_secrets.py" --staged
