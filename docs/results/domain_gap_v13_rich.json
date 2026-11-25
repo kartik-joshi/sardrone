@@ -1,0 +1,15 @@
+{
+  "embedding_model": "clip-vit-base32-torch",
+  "sim_images": 2000,
+  "real_images": 1387,
+  "separability_sim_vs_real": 1.0,
+  "sim_view": "train-v13-rich",
+  "separability_degraded_sim_vs_real": null,
+  "separability_sim_vs_sim": 0.5025,
+  "separability_real_vs_real": 0.4971,
+  "mean_distance_to_nearest_real_frame": {
+    "rich_sim": 0.3127,
+    "plain_sim_same_method": 0.2924
+  },
+  "note": "2000 frames each, seed 51; cosine distance from each simulated frame to its nearest sard-test frame (CLIP)"
+}

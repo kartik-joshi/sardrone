@@ -81,7 +81,11 @@ def embed_degraded(view, seed: int = 51) -> np.ndarray:
     return raw / np.linalg.norm(raw, axis=1, keepdims=True)
 
 
-def build(sim_count: int = 2000, seed: int = 51, map_path: Path = DEFAULT_MAP, json_path: Path = DEFAULT_JSON) -> dict:
+def build(sim_count: int = 2000, seed: int = 51, map_path: Path = DEFAULT_MAP, json_path: Path = DEFAULT_JSON,
+          sim_view_name: str | None = None, degraded: bool = True) -> dict:  # fmt: skip
+    """`sim_view_name`: the saved view of simulated frames to compare (default:
+    the simulated test frames). `degraded=False` skips the camera-realism
+    comparison, the only part that computes new embeddings."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -91,18 +95,21 @@ def build(sim_count: int = 2000, seed: int = 51, map_path: Path = DEFAULT_MAP, j
     frames = fo.load_dataset(DATASET_NAME)
     sard = fo.load_dataset(real.DATASET_NAME)
     curate.ensure_embeddings(sard)
-    sim_view = frames.load_saved_view(curate.VIEW_TEST).take(sim_count, seed=seed)
+    sim_name = sim_view_name or curate.VIEW_TEST
+    sim_view = frames.load_saved_view(sim_name).exists(curate.EMBEDDING_FIELD).take(sim_count, seed=seed)
     real_view = sard.load_saved_view(real.VIEW_TEST)
     sim = np.array(sim_view.values(curate.EMBEDDING_FIELD))
     real_embeddings = np.array(real_view.values(curate.EMBEDDING_FIELD))
-    degraded = embed_degraded(sim_view.take(600, seed=seed), seed)
+    degraded_emb = embed_degraded(sim_view.take(600, seed=seed), seed) if degraded else None
 
     summary = {
         "embedding_model": curate.EMBEDDING_MODEL,
         "sim_images": len(sim),
         "real_images": len(real_embeddings),
         "separability_sim_vs_real": round(domain_separability(sim, real_embeddings), 4),
-        "separability_degraded_sim_vs_real": round(domain_separability(degraded, real_embeddings), 4),
+        "sim_view": sim_name,
+        "separability_degraded_sim_vs_real": (round(domain_separability(degraded_emb, real_embeddings), 4)
+                                              if degraded_emb is not None else None),  # fmt: skip
         # Sanity checks: two RANDOM halves of one domain should not be
         # separable. (Splitting video frames into odd and even ones instead
         # scores BELOW 50 %: each frame's nearest neighbour is then in the
@@ -113,7 +120,7 @@ def build(sim_count: int = 2000, seed: int = 51, map_path: Path = DEFAULT_MAP, j
 
     points = umap.UMAP(n_components=2, random_state=seed).fit_transform(np.vstack([sim, real_embeddings]))
     figure, axis = plt.subplots(figsize=(8, 7))
-    axis.scatter(points[: len(sim), 0], points[: len(sim), 1], s=4, alpha=0.5, label=f"simulated sim-test ({len(sim)})")
+    axis.scatter(points[: len(sim), 0], points[: len(sim), 1], s=4, alpha=0.5, label=f"simulated {sim_name} ({len(sim)})")
     axis.scatter(points[len(sim) :, 0], points[len(sim) :, 1], s=4, alpha=0.5, label=f"real sard-test ({len(real_embeddings)})")
     axis.set_title(
         "CLIP embeddings: simulated vs real\n"
@@ -134,9 +141,15 @@ def build(sim_count: int = 2000, seed: int = 51, map_path: Path = DEFAULT_MAP, j
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Map and measure the sim-vs-real image gap.")
     parser.add_argument("--sim-count", type=int, default=2000)
+    parser.add_argument("--sim-view", help="saved view of simulated frames (default: the simulated test frames)")
+    parser.add_argument("--name", help="suffix for the outputs: gap_map_<name>.png, domain_gap_<name>.json")
+    parser.add_argument("--skip-degraded", action="store_true", help="skip the camera-realism comparison (no new embeddings)")
     args = parser.parse_args(argv)
-    print(json.dumps(build(args.sim_count), indent=2))
-    print(f"map: {DEFAULT_MAP}")
+    map_path = DEFAULT_MAP.with_name(f"gap_map_{args.name}.png") if args.name else DEFAULT_MAP
+    json_path = DEFAULT_JSON.with_name(f"domain_gap_{args.name}.json") if args.name else DEFAULT_JSON
+    print(json.dumps(build(args.sim_count, map_path=map_path, json_path=json_path, sim_view_name=args.sim_view,
+                           degraded=not args.skip_degraded), indent=2))  # fmt: skip
+    print(f"map: {map_path}")
     return 0
 
 
