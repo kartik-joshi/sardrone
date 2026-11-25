@@ -16,8 +16,11 @@ It checks the ADDED lines of the change for:
 It also checks file names (`.env`, key files; at push time also private
 folders and private docs), file sizes (over 10 MB), and images for GPS
 data. Extra patterns that must never be published, such as personal
-names, go in `.git/info/secret-patterns` (one regular expression per line,
+names, go in `.git/info/secret-patterns` or, for every repo on the machine,
+`~/.config/git-hooks/secret-patterns` (one regular expression per line,
 local and never committed), because writing them here would publish them.
+`--generic` is the machine-wide mode for any repo: the same checks without
+sardrone's private folders and branches, and a 50 MB size limit.
 
 Exit code 1 (and a report) if anything is found; 0 otherwise. A finding
 that is a false positive can be allowed for one line by adding
@@ -62,12 +65,18 @@ def git(*args: str, binary: bool = False):
     return out.stdout if binary else out.stdout.decode("utf-8", "replace")
 
 
+GLOBAL_PATTERNS = Path.home() / ".config" / "git-hooks" / "secret-patterns"
+
+
 def local_patterns() -> dict[str, str]:
-    path = Path(git("rev-parse", "--git-common-dir").strip()) / "info" / "secret-patterns"
-    if not path.exists():
-        return {}
-    lines = [ln.strip() for ln in path.read_text().splitlines() if ln.strip() and not ln.startswith("#")]
-    return {f"local pattern {k + 1}": ln for k, ln in enumerate(lines)}
+    """Personal patterns: this repo's .git/info/secret-patterns and the
+    machine-wide ~/.config/git-hooks/secret-patterns (both never committed)."""
+    out = {}
+    for path in (Path(git("rev-parse", "--git-common-dir").strip()) / "info" / "secret-patterns", GLOBAL_PATTERNS):
+        if path.exists():
+            lines = [ln.strip() for ln in path.read_text().splitlines() if ln.strip() and not ln.startswith("#")]
+            out.update({f"local pattern ({path.parent.name}/{path.name} {k + 1})": ln for k, ln in enumerate(lines)})
+    return out
 
 
 def scan_lines(lines: list[tuple[str, int, str]], patterns: dict[str, str]) -> list[str]:
@@ -126,7 +135,7 @@ def image_has_gps(data: bytes) -> bool:
         return False
 
 
-def check_files(files: list[str], read, private_too: bool) -> list[str]:
+def check_files(files: list[str], read, private_too: bool, max_bytes: int = MAX_BYTES) -> list[str]:
     found = []
     for f in files:
         if re.search(ALWAYS_BLOCKED_FILES, f):
@@ -136,14 +145,17 @@ def check_files(files: list[str], read, private_too: bool) -> list[str]:
         data = read(f)
         if data is None:
             continue
-        if len(data) > MAX_BYTES:
-            found.append(f"{f}: {len(data) / 1e6:.1f} MB (over 10 MB)")
+        if len(data) > max_bytes:
+            found.append(f"{f}: {len(data) / 1e6:.1f} MB (over {max_bytes // (1024 * 1024)} MB)")
         if f.lower().endswith(IMAGE_SUFFIXES) and image_has_gps(data):
             found.append(f"{f}: image with GPS location data")
     return found
 
 
-def check_staged() -> list[str]:
+GENERIC_MAX_BYTES = 50 * 1024 * 1024  # GitHub warns at 50 MB; other repos may hold larger data legitimately
+
+
+def check_staged(generic: bool = False) -> list[str]:
     patterns = {**PATTERNS, **local_patterns()}
     findings = scan_lines(added_lines(git("diff", "--cached", "-U0", "--no-color")), patterns)
     files = [f for f in git("diff", "--cached", "--name-only", "--diff-filter=AM").splitlines() if f]
@@ -154,11 +166,13 @@ def check_staged() -> list[str]:
         except subprocess.CalledProcessError:
             return None
 
-    return findings + check_files(files, read, private_too=False)
+    return findings + check_files(files, read, private_too=False, max_bytes=GENERIC_MAX_BYTES if generic else MAX_BYTES)
 
 
-def check_push(ranges: list[str], branches: list[str]) -> list[str]:
-    findings = [f"branch {b}: private branch, never pushed" for b in branches if b in PRIVATE_BRANCHES]
+def check_push(ranges: list[str], branches: list[str], generic: bool = False) -> list[str]:
+    """`generic`: for any repo (the machine-wide hook): no sardrone-specific
+    private folders or branches, and the larger size limit."""
+    findings = [] if generic else [f"branch {b}: private branch, never pushed" for b in branches if b in PRIVATE_BRANCHES]
     patterns = {**PATTERNS, **local_patterns()}
     for rng in ranges:
         findings += scan_lines(added_lines(git("log", "-p", "-U0", "--no-color", "--format=", rng)), patterns)
@@ -171,7 +185,8 @@ def check_push(ranges: list[str], branches: list[str]) -> list[str]:
             except subprocess.CalledProcessError:
                 return None  # deleted again later in the range
 
-        findings += check_files(files, read, private_too=True)
+        findings += check_files(files, read, private_too=not generic,
+                                max_bytes=GENERIC_MAX_BYTES if generic else MAX_BYTES)  # fmt: skip
     return findings
 
 
@@ -181,8 +196,10 @@ def main(argv=None) -> int:
     group.add_argument("--staged", action="store_true", help="check the staged changes (pre-commit)")
     group.add_argument("--push", nargs="*", metavar="RANGE", help="check these commit ranges (pre-push)")
     parser.add_argument("--branch", action="append", default=[], help="branch being pushed (pre-push)")
+    parser.add_argument("--generic", action="store_true", help="any repo: skip sardrone's private-path rules")
     args = parser.parse_args(argv)
-    findings = check_staged() if args.staged else check_push(args.push or [], args.branch)
+    findings = (check_staged(args.generic) if args.staged
+                else check_push(args.push or [], args.branch, args.generic))  # fmt: skip
     if findings:
         print("Blocked: possible secret or private information:", file=sys.stderr)
         for f in findings:

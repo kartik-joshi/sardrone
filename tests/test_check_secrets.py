@@ -116,3 +116,13 @@ def test_a_very_long_line_is_scanned_quickly_and_still_checked():
     findings = cs.scan_lines([("data.txt", 1, line)], cs.PATTERNS)
     assert time.perf_counter() - start < 10  # it used to backtrack for minutes
     assert any("personal email" in f for f in findings)
+
+
+def test_generic_mode_skips_sardrone_private_rules_but_not_secrets(repo):
+    base = git(repo, "rev-parse", "HEAD").strip()
+    stage(repo, "private/notes.md", "draft\n")
+    git(repo, "commit", "-q", "-m", "private")
+    tip = git(repo, "rev-parse", "HEAD").strip()
+    assert cs.check_push([f"{base}..{tip}"], ["phase5-cluemem"], generic=True) == []
+    stage(repo, "app.py", f"token = '{FAKE_GITHUB}'\n")
+    assert any("GitHub token" in f for f in cs.check_staged(generic=True))
