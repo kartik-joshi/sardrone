@@ -20,6 +20,8 @@
 | evaluate | `make evaluate` | a model, `sim-test`, `sard-test` | `docs/results/scorecard.*` |
 
 `make pipeline` prints what would run; `make pipeline RUN=1` runs it.
+The first end-to-end run (v13, 25 Nov 2026: new episodes to an updated
+scorecard in one command) is recorded in [results/pipeline_v13.md](results/pipeline_v13.md).
 
 ## The gate
 

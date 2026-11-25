@@ -1698,3 +1698,43 @@ back:
   runs detached, so this cannot happen again.
 - v12 repeats 300 images rather than adding new ones: more weight, not more
   variety.
+
+## v13: rich worlds, and the first end-to-end pipeline run (issues #4 and #10, 2026-11-25)
+
+v13 is v6's recipe (camera realism + 300 real SARD images) on the **rich
+worlds** of `configs/v13.yaml`: real vehicle meshes instead of box-built
+cars, 3 to 8 rock meshes, and two more bodies (walking adult, child). 5,999
+frames from 30 episodes, sampled by episode, 10 epochs. It came out of one
+command, from new episodes to the scorecard
+([results/pipeline_v13.md](results/pipeline_v13.md)).
+
+| Version | Simulated worlds | SARD mAP@0.5 (95 % interval) | HERIDAL mAP@0.5 |
+|---|---|---|---|
+| v4 (3 seeds) | plain | 0.532 to 0.586 | 0.231 (seed 51) |
+| v6 (3 seeds) | randomized | 0.597 (seed 51); mean 0.570 | 0.262 |
+| v7 | randomized + box-built cars | 0.498 (0.479 to 0.519) | 0.213 |
+| **v13** | **rich: vehicle and rock meshes, more bodies** | **0.614 (0.599 to 0.632)** | 0.236 (0.165 to 0.315) |
+
+- **The best single run on real SARD photos so far**, and the smallest
+  sim-to-real gap (0.295). One seed: v4's and v6's seeds spread 0.05 to
+  0.07, so "rich worlds beat randomized worlds" needs more seeds; "rich
+  worlds are at least as good as anything before" is solid.
+- **HERIDAL** does not separate the versions (101 images; the intervals
+  overlap widely).
+- **False alarms changed character.** Of the 24 most confident false alarms
+  on real photos, counted by eye from `docs/images/v13_false_alarms_real.jpg`:
+  - **4 vehicles** (v7: 20 of 24): a white Land Rover, a white car, and one
+    dark blue shape beside a car, which looks like a car roof (2 frames);
+  - **5 frames of one birch log**;
+  - **15 real people**, whose predicted box does not match the labelled box
+    closely enough (IoU < 0.5): mostly people lying down and groups.
+
+  The vehicle meshes did what box-built cars could not. Most of the
+  remaining top "false alarms" are box-size disagreements, not detections
+  of nothing.
+- **The image-level gap did not close.** The rich-world frames are still
+  100 % separable from real photos in CLIP space, and slightly farther from
+  their nearest real photo than the plain worlds (mean cosine distance
+  0.313 vs 0.292; `docs/images/gap_map_v13_rich.png`,
+  `docs/results/domain_gap_v13_rich.json`). Content that a detector can use
+  is not the same as content that makes the image look real.

@@ -36,6 +36,7 @@ than not training it at all.**
 | v10 | v1 with a 10x lower learning rate | 0.945 | 0.025 | 0.920 |
 | v11 | v8 with all 594 SARD pool images (2.4 % real) | 0.945 | 0.506 | 0.439 |
 | v12 | v8 with its 300 real images repeated 4x (4.6 % real) | 0.946 | 0.544 | 0.402 |
+| v13 | rich worlds (vehicle and rock meshes, more bodies), realism, 300 real | 0.909 | **0.614** | 0.295 |
 
 The pretrained network already found half the real people. Ten epochs on
 simulated frames taught it to find 93 % of simulated people and left it
@@ -50,6 +51,9 @@ matters is which layers learn, not how fast.
 Four times the simulated data (v8) scored lower on real photos only
 because the real images became a smaller share of training: with the share
 restored (v12, 4.6 %), the score is back in v4's range.
+Richer simulated content (v13: real vehicle and rock meshes, walking and
+child bodies) gave the best real score so far, 0.614 on one seed, and cut
+cars among the top false alarms from 20 of 24 (v7) to 4.
 Randomization did not measurably help, alone or with real images: three
 training runs each of v4 and v6 average 0.555 and 0.570 on real photos,
 and each recipe's runs spread over 0.05 to 0.07. Full table with 95 % bootstrap intervals:
@@ -305,8 +309,7 @@ v1.0 is complete; work continues. Each item is an issue in the
    ([#1](https://github.com/kartik-joshi/sardrone/issues/1))
 2. ~~**Untangle v8:** more simulation, or a smaller real share?~~ Done: the real share. With all simulated frames and 4.6 % real, SARD is back to 0.544, in v4's range. ([#2](https://github.com/kartik-joshi/sardrone/issues/2))
 3. ~~**Protect more of the network**~~ Done: freezing up to the detection layer keeps 0.435 on real photos from simulation alone. ([#3](https://github.com/kartik-joshi/sardrone/issues/3))
-4. **Richer simulated content:** real vehicle models, more body types,
-   vegetation and uneven terrain. ([#4](https://github.com/kartik-joshi/sardrone/issues/4))
+4. ~~**Richer simulated content:**~~ Done (v13): real vehicle and rock meshes and more bodies gave 0.614 on SARD and far fewer car false alarms; the images are still 100 % separable from real. Vegetation and uneven terrain are still to try. ([#4](https://github.com/kartik-joshi/sardrone/issues/4))
 5. **A better confirmation rule** for the low second pass. ([#5](https://github.com/kartik-joshi/sardrone/issues/5))
 6. **The agent:** 12 harder missions are written and scored for keyword
    rules (1 of 12); repeat runs, the newer model and model scores on the

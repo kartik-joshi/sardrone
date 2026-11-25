@@ -107,6 +107,7 @@ version. Each version changes one thing:
 | v10 | v1's frames, AdamW at a learning rate of 0.0002 (v1: 0.002, chosen automatically) | `d741bdbb19fbe45d` |
 | v11 | v8 with all 594 SARD pool images instead of 300 (2.4 % real) | `0bed5c53134d98f3` |
 | v12 | v8 with its 300 real images repeated 4x (4.6 % real); resumed after epoch 6 | `a31d75ef2142dfc0` |
+| v13 | v6's recipe on rich worlds: real vehicle and rock meshes, walking and child bodies; 5,999 frames from 30 episodes | `688cb09ad9b13984` |
 
 v0 was not in the original plan. It was added as a reference and turned
 out to matter most. v5 and v6 were added after v1 to v4 to answer two
@@ -154,6 +155,7 @@ Source: `docs/results/scorecard.csv`.
 | v10 v1, 10x lower learning rate | 0.945 (0.942 to 0.951) | 0.025 (0.022 to 0.029) | 0.920 (0.915 to 0.927) | 0.18 / 0.04 |
 | v11 v8, all 594 pool images | 0.945 (0.939 to 0.947) | 0.506 (0.485 to 0.528) | 0.439 (0.416 to 0.459) | 0.67 / 0.55 |
 | v12 v8, 300 real images x4 | 0.946 (0.943 to 0.952) | 0.544 (0.526 to 0.566) | 0.402 (0.380 to 0.421) | 0.67 / 0.64 |
+| v13 rich worlds | 0.909 (0.902 to 0.914) | 0.614 (0.599 to 0.632) | 0.295 (0.276 to 0.311) | 0.71 / 0.60 |
 
 mAP@0.5:0.95 on SARD: v0 0.301, v1 0.007, v2 0.013, v3 0.005, v4 0.235,
 v5 0.041, v6 0.255.
@@ -214,6 +216,7 @@ and licence in DETAILS.md). Scores from `docs/results/extra_real.csv`:
 | v8, v4 on all sim frames | 0.261 (0.174 to 0.355) | 0.59 |
 | v11, v8 + all 594 pool images | 0.150 (0.094 to 0.221) | 0.52 |
 | v12, v8 + 300 images x4 | 0.215 (0.150 to 0.287) | 0.52 |
+| v13, rich worlds | 0.236 (0.165 to 0.315) | 0.58 |
 
 Simulation-only training collapses again (0.030). The models that saw 300
 SARD images score above the untrained v0, though with only 101 images the
@@ -240,6 +243,17 @@ beat 594 different ones at half the share, though their intervals only just
 touch. HERIDAL does not follow the same order (v11 0.150, v12 0.215, v8
 0.261, with wide, overlapping intervals). One training seed per run; v12
 resumed after epoch 6 from its checkpoint.
+
+**Finding 8b. Richer content helps the detector without making the images
+look real.** v13 is v6's recipe on worlds with real vehicle and rock meshes
+and two more bodies. It scored 0.614 (0.599 to 0.632) on SARD, the best
+single run so far (one seed; v4's and v6's seeds spread 0.05 to 0.07). Among
+its 24 most confident false alarms on real photos, 4 are vehicles (v7: 20),
+5 are one birch log, and 15 are real people whose box did not match the
+label closely enough. Yet the rich frames are still 100 % separable from
+real photos in CLIP space, and slightly farther from the nearest real photo
+than the plain worlds (0.313 vs 0.292). The detector gains from the right
+objects; it does not need photorealism to do so.
 
 **Finding 9. Full-resolution tiles help every useful model on HERIDAL.**
 Source: `docs/results/tiled.md`. The method was fixed before scoring: 1280
