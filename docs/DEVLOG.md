@@ -1738,3 +1738,36 @@ command, from new episodes to the scorecard
   0.313 vs 0.292; `docs/images/gap_map_v13_rich.png`,
   `docs/results/domain_gap_v13_rich.json`). Content that a detector can use
   is not the same as content that makes the image look real.
+
+## Freezing with a few real images (issue #14, 2026-11-26)
+
+Question from a LinkedIn comment: does freezing still help when only a few
+real images are available? Five 10-epoch runs on v1's 6,000 simulated frames
+with camera realism plus 50, 100 or 300 SARD pool images
+(`runs/run_issue14.sh`, Apple M4 GPU, one run each):
+
+- frozen (everything but the detection layer, `--freeze 23`): v14 (300),
+  v15 (100), v16 (50), about 80 min each;
+- every layer trains: v17 (100), v18 (50), about 2.5 h each; v4 is the
+  300-image run.
+
+| Real images | Frozen SARD | Every layer SARD | Frozen HERIDAL | Every layer HERIDAL |
+| --- | --- | --- | --- | --- |
+| 0 | v9 0.435 | v3 0.020 | v9 0.264 | - |
+| 50 | v16 0.442 (0.424 to 0.463) | v18 0.420 (0.400 to 0.444) | 0.277 | 0.219 |
+| 100 | v15 0.556 (0.540 to 0.578) | v17 0.519 (0.502 to 0.538) | 0.285 | 0.246 |
+| 300 | v14 0.553 (0.533 to 0.575) | v4 0.547 (0.529 to 0.570) | 0.290 | 0.231 |
+
+### What it says
+- Freezing was never worse than training every layer, on SARD or HERIDAL.
+- 100 real images reach v4's 300-image score with either recipe; 50 do not,
+  and land at about v9's score with no real images at all.
+- Frozen runs give up simulation score (0.913 to 0.916 against 0.938).
+- The frozen runs are the three best untiled models on HERIDAL so far.
+
+### How far to trust this
+One run per setup. The frozen-vs-unfrozen gaps (at most 0.037 on SARD) are
+inside the 0.05 to 0.07 spread between seeds of v4 and v6, so this supports
+"freezing costs nothing", not "freezing is better". HERIDAL has 101 images
+and the intervals overlap widely. The temporary exports were deleted after
+the runs.

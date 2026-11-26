@@ -156,6 +156,11 @@ Source: `docs/results/scorecard.csv`.
 | v11 v8, all 594 pool images | 0.945 (0.939 to 0.947) | 0.506 (0.485 to 0.528) | 0.439 (0.416 to 0.459) | 0.67 / 0.55 |
 | v12 v8, 300 real images x4 | 0.946 (0.943 to 0.952) | 0.544 (0.526 to 0.566) | 0.402 (0.380 to 0.421) | 0.67 / 0.64 |
 | v13 rich worlds | 0.909 (0.902 to 0.914) | 0.614 (0.599 to 0.632) | 0.295 (0.276 to 0.311) | 0.71 / 0.60 |
+| v14 v4, backbone and neck frozen | 0.915 (0.909 to 0.922) | 0.553 (0.533 to 0.575) | 0.362 (0.340 to 0.383) | 0.68 / 0.58 |
+| v15 v14 with 100 real | 0.916 (0.909 to 0.922) | 0.556 (0.540 to 0.578) | 0.360 (0.337 to 0.378) | 0.63 / 0.62 |
+| v16 v14 with 50 real | 0.913 (0.907 to 0.920) | 0.442 (0.424 to 0.463) | 0.471 (0.450 to 0.491) | 0.59 / 0.53 |
+| v17 v4 with 100 real | 0.938 (0.932 to 0.942) | 0.519 (0.502 to 0.538) | 0.419 (0.399 to 0.437) | 0.67 / 0.55 |
+| v18 v4 with 50 real | 0.938 (0.932 to 0.942) | 0.420 (0.400 to 0.444) | 0.518 (0.492 to 0.538) | 0.58 / 0.52 |
 
 mAP@0.5:0.95 on SARD: v0 0.301, v1 0.007, v2 0.013, v3 0.005, v4 0.235,
 v5 0.041, v6 0.255.
@@ -217,6 +222,11 @@ and licence in DETAILS.md). Scores from `docs/results/extra_real.csv`:
 | v11, v8 + all 594 pool images | 0.150 (0.094 to 0.221) | 0.52 |
 | v12, v8 + 300 images x4 | 0.215 (0.150 to 0.287) | 0.52 |
 | v13, rich worlds | 0.236 (0.165 to 0.315) | 0.58 |
+| v14, v4 with backbone and neck frozen | 0.290 (0.208 to 0.383) | 0.66 |
+| v15, v14 with 100 real | 0.285 (0.207 to 0.383) | 0.69 |
+| v16, v14 with 50 real | 0.277 (0.200 to 0.371) | 0.69 |
+| v17, v4 with 100 real | 0.246 (0.160 to 0.357) | 0.68 |
+| v18, v4 with 50 real | 0.219 (0.152 to 0.296) | 0.60 |
 
 Simulation-only training collapses again (0.030). The models that saw 300
 SARD images score above the untrained v0, though with only 101 images the
@@ -254,6 +264,32 @@ label closely enough. Yet the rich frames are still 100 % separable from
 real photos in CLIP space, and slightly farther from the nearest real photo
 than the plain worlds (0.313 vs 0.292). The detector gains from the right
 objects; it does not need photorealism to do so.
+
+**Finding 8c. Freezing holds up with fewer real images, down to about 100**
+(issue #14). Each run trains on v1's 6,000 simulated frames with camera
+realism plus N real SARD pool images, ten epochs, one run each. Frozen =
+everything but the detection layer (module 23), as in v9.
+
+| Real images | Frozen: SARD | Every layer: SARD | Frozen: HERIDAL | Every layer: HERIDAL |
+| --- | --- | --- | --- | --- |
+| 0 | v9 0.435 (0.418 to 0.458) | v3 0.020 | v9 0.264 | not scored |
+| 50 | v16 0.442 (0.424 to 0.463) | v18 0.420 (0.400 to 0.444) | 0.277 | 0.219 |
+| 100 | v15 0.556 (0.540 to 0.578) | v17 0.519 (0.502 to 0.538) | 0.285 | 0.246 |
+| 300 | v14 0.553 (0.533 to 0.575) | v4 0.547 (0.529 to 0.570) | 0.290 | 0.231 |
+
+- **Freezing was never worse than training every layer**, on either real
+  set: level at 300 real images, ahead at 100 and 50. The gaps (up to 0.037
+  on SARD) are inside the 0.05 to 0.07 spread of v4's and v6's seeds, so
+  "freezing is better" needs more seeds; "freezing costs nothing" is solid.
+- **About 100 real images are enough** for either recipe to reach v4's
+  300-image score. **50 are not:** both fall to about v9's level with no
+  real images, so the first 50 real images add almost nothing on top of
+  a frozen network.
+- **Freezing costs simulation score** (0.913 to 0.916 against 0.938), as v9
+  did; the real score is what matters here.
+- **On HERIDAL the three frozen runs score highest of any untiled model so
+  far** (0.277 to 0.290; the best before was v9 at 0.264), with max recall
+  0.66 to 0.69. With 101 images the intervals overlap widely.
 
 **Finding 9. Full-resolution tiles help every useful model on HERIDAL.**
 Source: `docs/results/tiled.md`. The method was fixed before scoring: 1280
@@ -538,8 +574,9 @@ mission is unaffected because identity is decided from ground position.
 2. Choose cut-offs on validation photos that resemble the target footage:
    a cut-off chosen on SARD-like photos trades recall for precision on
    HERIDAL (Finding 9).
-3. Combine Finding 10 with real images: v9's freezing plus the 300 real
-   images of v4, over several seeds.
+3. ~~Combine Finding 10 with real images.~~ Done (Finding 8c): freezing
+   costs nothing and holds up down to 100 real images. Seeds would show
+   whether it is better, not just as good.
 4. Widen the simulated content (more bodies, vegetation, terrain) before
    spending more on rendering fidelity, since content is where the domains
    differ.

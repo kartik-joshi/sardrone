@@ -37,6 +37,11 @@ than not training it at all.**
 | v11 | v8 with all 594 SARD pool images (2.4 % real) | 0.945 | 0.506 | 0.439 |
 | v12 | v8 with its 300 real images repeated 4x (4.6 % real) | 0.946 | 0.544 | 0.402 |
 | v13 | rich worlds (vehicle and rock meshes, more bodies), realism, 300 real | 0.909 | **0.614** | 0.295 |
+| v14 | v4 with backbone and neck frozen (300 real) | 0.915 | 0.553 | 0.362 |
+| v15 | v14 with 100 real | 0.916 | 0.556 | 0.360 |
+| v16 | v14 with 50 real | 0.913 | 0.442 | 0.471 |
+| v17 | v4 with 100 real (every layer trains) | 0.938 | 0.519 | 0.419 |
+| v18 | v4 with 50 real (every layer trains) | 0.938 | 0.420 | 0.518 |
 
 The pretrained network already found half the real people. Ten epochs on
 simulated frames taught it to find 93 % of simulated people and left it
@@ -54,6 +59,10 @@ restored (v12, 4.6 %), the score is back in v4's range.
 Richer simulated content (v13: real vehicle and rock meshes, walking and
 child bodies) gave the best real score so far, 0.614 on one seed, and cut
 cars among the top false alarms from 20 of 24 (v7) to 4.
+Freezing the backbone and neck while adding real images (v14 to v16) was
+never worse than training every layer (v4, v17, v18): level at 300 real
+images, ahead at 100 (0.556 vs 0.519) and at 50 (0.442 vs 0.420), one run
+each. Below 100 real images both fall to about v9's level with none.
 Randomization did not measurably help, alone or with real images: three
 training runs each of v4 and v6 average 0.555 and 0.570 on real photos,
 and each recipe's runs spread over 0.05 to 0.07. Full table with 95 % bootstrap intervals:
@@ -309,6 +318,7 @@ v1.0 is complete; work continues. Each item is an issue in the
    ([#1](https://github.com/kartik-joshi/sardrone/issues/1))
 2. ~~**Untangle v8:** more simulation, or a smaller real share?~~ Done: the real share. With all simulated frames and 4.6 % real, SARD is back to 0.544, in v4's range. ([#2](https://github.com/kartik-joshi/sardrone/issues/2))
 3. ~~**Protect more of the network**~~ Done: freezing up to the detection layer keeps 0.435 on real photos from simulation alone. ([#3](https://github.com/kartik-joshi/sardrone/issues/3))
+   With real images added, freezing costs nothing and holds up down to 100 of them (0.556 on SARD); at 50, both recipes fall to 0.42 to 0.44, about what freezing gives with no real images. ([#14](https://github.com/kartik-joshi/sardrone/issues/14))
 4. ~~**Richer simulated content:**~~ Done (v13): real vehicle and rock meshes and more bodies gave 0.614 on SARD and far fewer car false alarms; the images are still 100 % separable from real. Vegetation and uneven terrain are still to try. ([#4](https://github.com/kartik-joshi/sardrone/issues/4))
 5. **A better confirmation rule** for the low second pass. ([#5](https://github.com/kartik-joshi/sardrone/issues/5))
 6. **The agent:** 12 harder missions are written and scored for keyword
